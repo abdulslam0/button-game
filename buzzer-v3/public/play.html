@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>من يضغط الزر أولاً — لاعب</title>
+<link rel="stylesheet" href="/shared.css"/>
+</head>
+<body>
+
+<!-- ══ JOIN FORM ══════════════════════════════════════════════ -->
+<div id="view-join" style="display:flex;flex-direction:column;align-items:center;width:100%">
+  <header>
+    <div class="logo-circle"><div class="logo-inner"></div></div>
+    <h1>من يضغط الزر أولاً</h1>
+  </header>
+
+  <div class="card">
+    <h2 style="font-size:1.1rem;font-weight:900;color:#241c15;margin-bottom:1rem">انضم إلى غرفة</h2>
+
+    <label style="font-size:.95rem;font-weight:700;display:block;margin-bottom:.1rem">اسمك</label>
+    <input type="text"   id="player-name" placeholder="اسمك هنا..." maxlength="30"/>
+
+    <label style="font-size:.95rem;font-weight:700;display:block;margin-top:.75rem;margin-bottom:.1rem">رمز الغرفة (4 أرقام)</label>
+    <input type="number" id="join-code" placeholder="أدخل الرمز" min="0" max="9999"
+           oninput="this.value=this.value.slice(0,4)" style="letter-spacing:.25em;font-weight:900"/>
+
+    <div class="form-error" id="join-error"></div>
+    <button class="btn btn-red" style="margin-top:.75rem" onclick="joinGame()">دخول</button>
+  </div>
+</div>
+
+<!-- ══ PLAY VIEW ══════════════════════════════════════════════ -->
+<div id="view-play" style="display:none;flex-direction:column;align-items:center;width:100%">
+
+  <header>
+    <div class="logo-circle"><div class="logo-inner"></div></div>
+    <h1 id="p-game-name">من يضغط الزر أولاً</h1>
+    <div class="room-badge">
+      غرفة: <span class="room-code" id="p-room-code">----</span>
+    </div>
+  </header>
+
+  <div class="stat-bar" style="max-width:480px;width:100%">
+    <div class="stat">اللاعب: <span id="p-name">-</span></div>
+    <div class="stat">النقاط: <span id="p-score">0</span></div>
+    <div class="stat">الجولة: <span id="p-round">1</span></div>
+    <div class="stat">العد: <span id="p-countdown">-</span></div>
+  </div>
+
+  <div class="buzzer-wrap">
+    <div id="countdown-badge"></div>
+    <button id="buzzer" disabled onclick="buzz()"></button>
+
+    <!-- answer timer — shown only to the buzzing player -->
+    <div id="answer-timer">
+      <div class="answer-ring">
+        <div class="answer-ring-fill" id="ring-fill"></div>
+        <span id="answer-secs">3</span>
+      </div>
+      <span class="answer-label">ثانية للإجابة</span>
+    </div>
+
+    <p id="player-msg">جاهز؟ انتظر بداية الجولة.</p>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <h3 style="font-weight:700;margin-bottom:.5rem;font-size:1rem;color:#241c15">اللاعبون</h3>
+    <table>
+      <thead><tr><th>الاسم</th><th>النقاط</th><th>الحالة</th></tr></thead>
+      <tbody id="p-players-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Socket.io client -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ─────────────────────────────────────────────────────────────
+// play/app.js
+// ─────────────────────────────────────────────────────────────
+
+const socket      = io();
+let   myPlayerId  = null;
+let   roomCode    = null;
+let   iAmBuzzer   = false;
+
+// ── Sound synthesis ───────────────────────────────────────────
+const AC = typeof AudioContext !== 'undefined' ? new AudioContext() : null;
+function tone(f,d,t='sine',v=.35){
+  if(!AC)return; if(AC.state==='suspended')AC.resume();
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=t; o.frequency.value=f;
+  g.gain.setValueAtTime(v,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);
+  o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);
+}
+function soundPress()  { tone(320,.12,'square',.4); }
+function soundWinner() { [523,659,784].forEach((f,i)=>setTimeout(()=>tone(f,.3,'sine',.45),i*140)); }
+function soundReset()  { tone(440,.2); setTimeout(()=>tone(550,.15),80); }
+
+// ── Helpers ───────────────────────────────────────────────────
+function statusLabel(s){
+  return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
+}
+function statusClass(s){
+  return {winner:'status-winner',ready:'status-ready','too-late':'status-too-late',offline:'status-offline',wrong:'status-wrong'}[s]||'';
+}
+
+// ── Join ───────────────────────────────────────────────────────
+function joinGame(){
+  const name = document.getElementById('player-name').value.trim().slice(0,30);
+  const code = document.getElementById('join-code').value.trim();
+  const errEl = document.getElementById('join-error');
+  errEl.textContent = '';
+
+  if(!name){ errEl.textContent='أدخل اسمك.'; return; }
+  if(!/^\d{4}$/.test(code)){ errEl.textContent='الرمز يجب أن يكون 4 أرقام.'; return; }
+
+  socket.emit('player:join', { name, roomCode: code });
+}
+
+// ── Buzz ───────────────────────────────────────────────────────
+function buzz(){
+  soundPress();
+  socket.emit('player:buzz', { roomCode, sentAt: Date.now() });
+}
+
+// ── Socket events ─────────────────────────────────────────────
+socket.on('player:self', (player) => {
+  myPlayerId = player.id;
+  // get roomCode from join input (server doesn't re-send it here)
+  roomCode = document.getElementById('join-code').value.trim();
+  document.getElementById('p-name').textContent     = player.name;
+  document.getElementById('p-room-code').textContent = roomCode;
+  document.getElementById('view-join').style.display = 'none';
+  document.getElementById('view-play').style.display = 'flex';
+});
+
+socket.on('room:error', (msg) => {
+  // show error in whichever view is active
+  const el = document.getElementById('join-error');
+  if(el) el.textContent = msg;
+});
+
+socket.on('game:state', (state) => {
+  // Update game name display once we have it
+  if(state.gameName) document.getElementById('p-game-name').textContent = state.gameName;
+  render(state);
+});
+
+socket.on('round:winner', ({ winnerId, winnerName }) => {
+  if(winnerId === myPlayerId){
+    setMsg('🎉 أنت الأول! أجب الآن');
+    soundWinner();
+    iAmBuzzer = true;
+  } else {
+    setMsg(`⛔ ${winnerName} ضغط أولاً!`);
+    iAmBuzzer = false;
+  }
+});
+
+socket.on('round:active-flash', () => {
+  soundReset();
+  iAmBuzzer = false;
+  hideAnswerTimer();
+  const bz = document.getElementById('buzzer');
+  if(bz){ bz.classList.add('flash'); setTimeout(()=>bz.classList.remove('flash'),700); }
+  setMsg('الجولة بدأت! اضغط الآن');
+});
+
+socket.on('answer:tick', ({ secs }) => {
+  if(iAmBuzzer) showAnswerTimer(secs);
+});
+
+socket.on('answer:done', () => {
+  hideAnswerTimer();
+  iAmBuzzer = false;
+});
+
+// ── Render ─────────────────────────────────────────────────────
+function render(state){
+  if(!myPlayerId) return;
+  const me = state.players.find(p=>p.id===myPlayerId);
+  if(!me) return;
+
+  document.getElementById('p-score').textContent   = me.score;
+  document.getElementById('p-round').textContent   = state.round;
+  document.getElementById('p-countdown').textContent =
+    state.roundLocked && !state.winnerId ? state.countdown : '-';
+
+  const isBlocked = (state.blockedIds||[]).includes(myPlayerId);
+  const bz = document.getElementById('buzzer');
+  if(bz) bz.disabled = state.gameLocked || state.roundLocked || me.hasPressed || isBlocked;
+
+  const cb = document.getElementById('countdown-badge');
+  if(cb) cb.textContent = (!state.winnerId && state.roundLocked && !state.gameLocked && state.countdown > 0)
+    ? state.countdown : '';
+
+  if(isBlocked && me.status === 'wrong'){
+    setMsg('❌ إجابة خاطئة — أنت خارج هذه الجولة');
+  }
+
+  if(!state.winnerId && !iAmBuzzer) hideAnswerTimer();
+
+  const tb = document.getElementById('p-players-tbody');
+  if(tb) tb.innerHTML = state.players.map(p=>`
+    <tr>
+      <td style="font-weight:700">${p.name}${p.id===myPlayerId?' (أنت)':''}</td>
+      <td>${p.score}</td>
+      <td class="${statusClass(p.status)}">${statusLabel(p.status)}</td>
+    </tr>`).join('');
+}
+
+// ── Answer timer UI ───────────────────────────────────────────
+function showAnswerTimer(secs){
+  const el=document.getElementById('answer-timer');
+  document.getElementById('answer-secs').textContent=secs;
+  document.getElementById('ring-fill').style.setProperty('--pct',(secs/3*100)+'%');
+  el.classList.add('active');
+}
+function hideAnswerTimer(){
+  document.getElementById('answer-timer').classList.remove('active');
+}
+
+function setMsg(m){
+  const el=document.getElementById('player-msg');
+  if(!el)return;
+  el.style.opacity='0';
+  setTimeout(()=>{ el.textContent=m; el.style.opacity='1'; },200);
+}
+</script>
+</body>
+</html>
