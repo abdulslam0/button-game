@@ -5,27 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>من يضغط الزر أولاً — لاعب</title>
 <link rel="stylesheet" href="/shared.css"/>
-<style>
-/* ── Reconnect button (fixed, only visible when disconnected) ── */
-#btn-reconnect{
-  display:none;position:fixed;bottom:1.25rem;left:1.25rem;z-index:9999;
-  background:#b60012;color:#fff;border:none;border-radius:2rem;
-  padding:.55rem 1.1rem;font-size:.9rem;font-weight:700;cursor:pointer;
-  box-shadow:0 4px 14px rgba(182,0,18,.45);font-family:'Tajawal',sans-serif;
-  direction:rtl;transition:opacity .25s;
-}
-#btn-reconnect.visible{ display:block; }
-/* subtle pulse to draw attention */
-@keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.6} }
-#btn-reconnect.visible{ animation:pulse 2s ease-in-out infinite; }
-</style>
 </head>
 <body>
 
-<!-- ══ RECONNECT BUTTON ══════════════════════════════════════ -->
-<button id="btn-reconnect" onclick="manualReconnect()">⚡ إعادة اتصال</button>
-
-<!-- ══ JOIN FORM ══════════════════════════════════════════════ -->
+<!-- JOIN FORM -->
 <div id="view-join" style="display:flex;flex-direction:column;align-items:center;width:100%">
   <header>
     <div class="logo-circle"><div class="logo-inner"></div></div>
@@ -43,7 +26,7 @@
   </div>
 </div>
 
-<!-- ══ PLAY VIEW ══════════════════════════════════════════════ -->
+<!-- PLAY VIEW -->
 <div id="view-play" style="display:none;flex-direction:column;align-items:center;width:100%">
   <header>
     <div class="logo-circle"><div class="logo-inner"></div></div>
@@ -73,97 +56,30 @@
 <script src="/socket.io/socket.io.js"></script>
 <script>
 /*
- * play.html — v5
+ * play.html — v4
  *
- * localStorage keys:
- *   buzzer_pid   persistent player id
- *   buzzer_room  room code
- *   buzzer_name  player display name
+ * Persistence keys (localStorage):
+ *   buzzer_pid   persistent player id (server-assigned)
+ *   buzzer_room  last joined room code
+ *   buzzer_name  player name
  *
- * Recovery mechanics:
- *   1. visibilitychange listener  — resync when screen comes back
- *   2. Heartbeat monitor          — force reconnect if > 15 s silent
- *   3. #btn-reconnect             — manual override, shown when offline
+ * On page load:
+ *   If pid + room exist → emit client:resync (silent reconnect).
+ *   Server replies with player:self + game:state → skip form.
+ *   If server doesn't know the id → stay on join form.
  */
 
-var LS_PID  = 'buzzer_pid';
-var LS_ROOM = 'buzzer_room';
-var LS_NAME = 'buzzer_name';
+const LS_PID  = 'buzzer_pid';
+const LS_ROOM = 'buzzer_room';
+const LS_NAME = 'buzzer_name';
 
-var socket    = io({ reconnectionDelay:1000, reconnectionDelayMax:5000 });
-var myId      = null;
-var roomCode  = null;
-var iAmBuzzer = false;
+const socket    = io({ reconnectionDelay: 1000, reconnectionDelayMax: 5000 });
+let   myId      = null;
+let   roomCode  = null;
+let   iAmBuzzer = false;
 
-// ── [A] Heartbeat tracking ────────────────────────────────────
-var lastHeartbeat   = Date.now();
-var STALE_MS        = 15000;   // 15 s without any server event
-var HEARTBEAT_TICK  =  5000;   // poll every 5 s
-
-function bumpHeartbeat(){ lastHeartbeat = Date.now(); }
-
-// Stale-state check: runs every 5 s
-setInterval(function(){
-  if(Date.now() - lastHeartbeat > STALE_MS){
-    // Connection is "brain dead" — force reconnect
-    console.log('[heartbeat] stale — forcing reconnect');
-    forceResync();
-  }
-}, HEARTBEAT_TICK);
-
-// ── [B] Core resync logic (used by all three mechanics) ───────
-function emitResync(){
-  var pid  = myId  || localStorage.getItem(LS_PID);
-  var room = roomCode || localStorage.getItem(LS_ROOM);
-  var name = localStorage.getItem(LS_NAME);
-  if(pid && room){
-    socket.emit('client:resync', { persistentId:pid, roomCode:room });
-  } else if(room && name){
-    // Fallback: re-emit join in case the id is unknown on server
-    var storedPid = localStorage.getItem(LS_PID);
-    socket.emit('player:join', { name:name, roomCode:room, persistentId:storedPid||undefined });
-  }
-}
-
-function forceResync(){
-  if(!socket.connected){
-    socket.connect();
-    // Socket.io fires 'connect' event; emit resync from there
-  } else {
-    emitResync();
-  }
-}
-
-// ── [C] Reconnect button ──────────────────────────────────────
-var btnReconnect = document.getElementById('btn-reconnect');
-
-function setReconnectBtn(visible){
-  if(visible){ btnReconnect.classList.add('visible'); }
-  else        { btnReconnect.classList.remove('visible'); }
-}
-
-function manualReconnect(){
-  setReconnectBtn(false);  // hide immediately on click
-  forceResync();
-}
-
-// ── [D] visibilitychange — "the radar" ───────────────────────
-document.addEventListener('visibilitychange', function(){
-  if(document.visibilityState === 'visible'){
-    if(!socket.connected){
-      console.log('[visibility] tab visible, socket offline — reconnecting');
-      socket.connect();
-      // resync emitted from socket 'connect' handler below
-    } else {
-      // Socket may still be connected but server state could have
-      // changed — re-request the latest snapshot
-      emitResync();
-    }
-  }
-});
-
-// ── Sounds ────────────────────────────────────────────────────
-var AC = typeof AudioContext !== 'undefined' ? new AudioContext() : null;
+// Sound
+const AC = typeof AudioContext !== 'undefined' ? new AudioContext() : null;
 function tone(f,d,t,v){
   t=t||'sine';v=v||0.35;
   if(!AC)return; if(AC.state==='suspended')AC.resume();
@@ -177,7 +93,6 @@ function soundPress()  { tone(320,0.12,'square',0.4); }
 function soundWinner() { [523,659,784].forEach(function(f,i){setTimeout(function(){tone(f,0.3,'sine',0.45);},i*140);}); }
 function soundReset()  { tone(440,0.2); setTimeout(function(){tone(550,0.15);},80); }
 
-// ── Label helpers ─────────────────────────────────────────────
 function statusLabel(s){
   return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
 }
@@ -192,14 +107,14 @@ function setMsg(m){
   setTimeout(function(){ el.textContent=m; el.style.opacity='1'; },150);
 }
 
-function showPlayView(name,code){
+function showPlayView(name, code){
   document.getElementById('p-name').textContent      = name;
   document.getElementById('p-room-code').textContent = code;
   document.getElementById('view-join').style.display  = 'none';
   document.getElementById('view-play').style.display  = 'flex';
 }
 
-// ── On page load: attempt silent resync ──────────────────────
+// On load — attempt silent resync
 window.addEventListener('load', function(){
   var pid  = localStorage.getItem(LS_PID);
   var room = localStorage.getItem(LS_ROOM);
@@ -207,53 +122,29 @@ window.addEventListener('load', function(){
   if(pid && room){
     document.getElementById('player-name').value = name||'';
     document.getElementById('join-code').value   = room;
-    socket.emit('client:resync', { persistentId:pid, roomCode:room });
+    socket.emit('client:resync', { persistentId: pid, roomCode: room });
   }
 });
 
-// ── Manual join (form submit) ─────────────────────────────────
+// Manual join
 function joinGame(){
   var name = document.getElementById('player-name').value.trim().slice(0,30);
   var code = document.getElementById('join-code').value.trim();
   var err  = document.getElementById('join-error');
-  err.textContent='';
+  err.textContent = '';
   if(!name){ err.textContent='أدخل اسمك.'; return; }
   if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام.'; return; }
   var pid = localStorage.getItem(LS_PID)||undefined;
-  socket.emit('player:join',{ name:name, roomCode:code, persistentId:pid });
+  socket.emit('player:join', { name: name, roomCode: code, persistentId: pid });
 }
 
 function buzz(){
   soundPress();
-  socket.emit('player:buzz',{ roomCode:roomCode, sentAt:Date.now() });
+  socket.emit('player:buzz', { roomCode: roomCode, sentAt: Date.now() });
 }
 
-// ── Socket lifecycle ──────────────────────────────────────────
-socket.on('connect', function(){
-  bumpHeartbeat();
-  setReconnectBtn(false);
-  // If we already know who we are, immediately resync
-  if(myId && roomCode){
-    socket.emit('client:resync',{ persistentId:myId, roomCode:roomCode });
-  } else {
-    // Try localStorage
-    var pid  = localStorage.getItem(LS_PID);
-    var room = localStorage.getItem(LS_ROOM);
-    if(pid && room) socket.emit('client:resync',{ persistentId:pid, roomCode:room });
-  }
-});
-
-socket.on('disconnect', function(){
-  setReconnectBtn(true);
-});
-
-socket.on('connect_error', function(){
-  setReconnectBtn(true);
-});
-
-// ── Game events ───────────────────────────────────────────────
+// Socket events
 socket.on('player:self', function(player){
-  bumpHeartbeat();
   myId     = player.id;
   roomCode = localStorage.getItem(LS_ROOM) || document.getElementById('join-code').value.trim();
   localStorage.setItem(LS_PID,  player.id);
@@ -263,20 +154,17 @@ socket.on('player:self', function(player){
 });
 
 socket.on('room:error', function(msg){
-  bumpHeartbeat();
   var el=document.getElementById('join-error');
   if(el) el.textContent=msg;
 });
 
 socket.on('game:state', function(state){
-  bumpHeartbeat();
   if(state.gameName) document.getElementById('p-game-name').textContent=state.gameName;
   if(!roomCode && state.roomCode) roomCode=state.roomCode;
   render(state);
 });
 
 socket.on('round:winner', function(d){
-  bumpHeartbeat();
   if(d.winnerId===myId){
     setMsg('🎉 أنت الأول! أجب الآن');
     soundWinner();
@@ -288,7 +176,6 @@ socket.on('round:winner', function(d){
 });
 
 socket.on('round:active-flash', function(){
-  bumpHeartbeat();
   soundReset();
   iAmBuzzer=false;
   var bz=document.getElementById('buzzer');
@@ -296,7 +183,6 @@ socket.on('round:active-flash', function(){
   setMsg('الجولة بدأت! اضغط الآن');
 });
 
-// ── Render ────────────────────────────────────────────────────
 function render(state){
   if(!myId) return;
   var me=state.players.find(function(p){return p.id===myId;});
@@ -309,7 +195,7 @@ function render(state){
 
   var isBlocked=(state.blockedIds||[]).indexOf(myId)>-1;
   var bz=document.getElementById('buzzer');
-  if(bz) bz.disabled=state.gameLocked||state.roundLocked||me.hasPressed||isBlocked;
+  if(bz) bz.disabled = state.gameLocked||state.roundLocked||me.hasPressed||isBlocked;
 
   var cb=document.getElementById('countdown-badge');
   if(cb) cb.textContent=(!state.winnerId&&state.roundLocked&&!state.gameLocked&&state.countdown>0)
@@ -320,11 +206,9 @@ function render(state){
 
   var tb=document.getElementById('p-players-tbody');
   if(tb) tb.innerHTML=state.players.map(function(p){
-    return '<tr>'
-      +'<td style="font-weight:700">'+p.name+(p.id===myId?' (أنت)':'')+'</td>'
+    return '<tr><td style="font-weight:700">'+p.name+(p.id===myId?' (أنت)':'')+'</td>'
       +'<td>'+p.score+'</td>'
-      +'<td class="'+statusClass(p.status)+'">'+statusLabel(p.status)+'</td>'
-      +'</tr>';
+      +'<td class="'+statusClass(p.status)+'">'+statusLabel(p.status)+'</td></tr>';
   }).join('');
 }
 </script>

@@ -5,26 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>من يضغط الزر أولاً — مدير</title>
 <link rel="stylesheet" href="/shared.css"/>
-<style>
-/* ── Reconnect button ── */
-#btn-reconnect{
-  display:none;position:fixed;bottom:1.25rem;left:1.25rem;z-index:9999;
-  background:#241c15;color:#fff;border:none;border-radius:2rem;
-  padding:.55rem 1.1rem;font-size:.9rem;font-weight:700;cursor:pointer;
-  box-shadow:0 4px 14px rgba(36,28,21,.5);font-family:'Tajawal',sans-serif;
-  direction:rtl;transition:opacity .25s;
-}
-#btn-reconnect.visible{ display:block; }
-@keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.6} }
-#btn-reconnect.visible{ animation:pulse 2s ease-in-out infinite; }
-</style>
 </head>
 <body>
 
-<!-- ══ RECONNECT BUTTON ══════════════════════════════════════ -->
-<button id="btn-reconnect" onclick="manualReconnect()">⚡ إعادة اتصال</button>
-
-<!-- ══ SETUP FORM ══════════════════════════════════════════════ -->
+<!-- SETUP FORM -->
 <div id="view-setup" style="display:flex;flex-direction:column;align-items:center;width:100%">
   <header>
     <div class="logo-circle"><div class="logo-inner"></div></div>
@@ -42,7 +26,7 @@
   </div>
 </div>
 
-<!-- ══ ADMIN DASHBOARD ═════════════════════════════════════════ -->
+<!-- ADMIN DASHBOARD -->
 <div id="view-admin" style="display:none;flex-direction:column;align-items:center;width:100%">
   <header>
     <div class="logo-circle"><div class="logo-inner"></div></div>
@@ -83,75 +67,24 @@
 <script src="/socket.io/socket.io.js"></script>
 <script>
 /*
- * admin.html — v5
+ * admin.html — v4
  *
- * localStorage key:
- *   buzzer_admin_room   room code for silent rejoin
+ * Persistence keys (localStorage):
+ *   buzzer_admin_room   room code for admin rejoin
  *
- * Recovery mechanics:
- *   1. visibilitychange listener  — rejoin when tab/screen returns
- *   2. Heartbeat monitor          — force reconnect if > 15 s silent
- *   3. #btn-reconnect             — manual override when offline
+ * On page load:
+ *   If buzzer_admin_room exists → emit admin:rejoin.
+ *   Server responds with room:created + game:state → skip form.
  */
 
-var LS_ADMIN_ROOM = 'buzzer_admin_room';
+const LS_ADMIN_ROOM = 'buzzer_admin_room';
 
-var socket   = io({ reconnectionDelay:1000, reconnectionDelayMax:5000 });
-var roomCode = null;
-var MEDALS   = ['🥇','🥈','🥉'];
+const socket   = io({ reconnectionDelay: 1000, reconnectionDelayMax: 5000 });
+var   roomCode = null;
+const MEDALS   = ['🥇','🥈','🥉'];
 
-// ── [A] Heartbeat tracking ────────────────────────────────────
-var lastHeartbeat  = Date.now();
-var STALE_MS       = 15000;
-var HEARTBEAT_TICK =  5000;
-
-function bumpHeartbeat(){ lastHeartbeat = Date.now(); }
-
-setInterval(function(){
-  if(Date.now() - lastHeartbeat > STALE_MS){
-    console.log('[heartbeat] admin stale — forcing reconnect');
-    forceResync();
-  }
-}, HEARTBEAT_TICK);
-
-// ── [B] Core resync logic ─────────────────────────────────────
-function emitResync(){
-  var room = roomCode || localStorage.getItem(LS_ADMIN_ROOM);
-  if(room) socket.emit('admin:rejoin',{ roomCode:room });
-}
-
-function forceResync(){
-  if(!socket.connected){ socket.connect(); }
-  else { emitResync(); }
-}
-
-// ── [C] Reconnect button ──────────────────────────────────────
-var btnReconnect = document.getElementById('btn-reconnect');
-
-function setReconnectBtn(visible){
-  if(visible){ btnReconnect.classList.add('visible'); }
-  else        { btnReconnect.classList.remove('visible'); }
-}
-
-function manualReconnect(){
-  setReconnectBtn(false);
-  forceResync();
-}
-
-// ── [D] visibilitychange ──────────────────────────────────────
-document.addEventListener('visibilitychange', function(){
-  if(document.visibilityState === 'visible'){
-    if(!socket.connected){
-      console.log('[visibility] admin tab visible, socket offline — reconnecting');
-      socket.connect();
-    } else {
-      emitResync();
-    }
-  }
-});
-
-// ── Sounds ────────────────────────────────────────────────────
-var AC = typeof AudioContext !== 'undefined' ? new AudioContext() : null;
+// Sound
+const AC = typeof AudioContext !== 'undefined' ? new AudioContext() : null;
 function tone(f,d,t,v){
   t=t||'sine';v=v||0.35;
   if(!AC)return; if(AC.state==='suspended')AC.resume();
@@ -170,7 +103,24 @@ function statusClass(s){
   return {winner:'status-winner',ready:'status-ready','too-late':'status-too-late',offline:'status-offline',wrong:'status-wrong'}[s]||'';
 }
 
-function emit(ev){ socket.emit(ev,{ roomCode:roomCode }); }
+function emit(ev){ socket.emit(ev, { roomCode: roomCode }); }
+
+// On load — attempt silent admin rejoin
+window.addEventListener('load', function(){
+  var saved = localStorage.getItem(LS_ADMIN_ROOM);
+  if(saved) socket.emit('admin:rejoin', { roomCode: saved });
+});
+
+// Create new room
+function createRoom(){
+  var name = document.getElementById('game-name').value.trim();
+  var code = document.getElementById('room-code').value.trim();
+  var err  = document.getElementById('setup-error');
+  err.textContent = '';
+  if(!name){ err.textContent='أدخل اسم اللعبة.'; return; }
+  if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام بالضبط.'; return; }
+  socket.emit('admin:create-room', { gameName: name, roomCode: code });
+}
 
 function showDashboard(code, name){
   roomCode = code;
@@ -181,57 +131,25 @@ function showDashboard(code, name){
   document.getElementById('view-admin').style.display = 'flex';
 }
 
-// ── On load: attempt silent rejoin ────────────────────────────
-window.addEventListener('load', function(){
-  var saved = localStorage.getItem(LS_ADMIN_ROOM);
-  if(saved) socket.emit('admin:rejoin',{ roomCode:saved });
-});
-
-// ── Socket lifecycle ──────────────────────────────────────────
-socket.on('connect', function(){
-  bumpHeartbeat();
-  setReconnectBtn(false);
-  // Rejoin if we have a stored room
-  var room = roomCode || localStorage.getItem(LS_ADMIN_ROOM);
-  if(room) socket.emit('admin:rejoin',{ roomCode:room });
-});
-
-socket.on('disconnect', function(){
-  setReconnectBtn(true);
-});
-
-socket.on('connect_error', function(){
-  setReconnectBtn(true);
-});
-
-// ── Game events ───────────────────────────────────────────────
+// Socket events
 socket.on('room:created', function(d){
-  bumpHeartbeat();
   showDashboard(d.roomCode, d.gameName);
 });
 
 socket.on('room:error', function(msg){
-  bumpHeartbeat();
-  // Only wipe dashboard if we haven't entered it yet
-  if(!roomCode){
-    localStorage.removeItem(LS_ADMIN_ROOM);
-    document.getElementById('view-setup').style.display = 'flex';
-    document.getElementById('view-admin').style.display = 'none';
-  }
-  document.getElementById('setup-error').textContent = msg;
+  // Could arrive during rejoin attempt (room gone) or create
+  var errEl = document.getElementById('setup-error');
+  // If we were trying to rejoin, clear stored room and show form
+  localStorage.removeItem(LS_ADMIN_ROOM);
+  document.getElementById('view-setup').style.display = 'flex';
+  document.getElementById('view-admin').style.display = 'none';
+  if(errEl) errEl.textContent = msg;
 });
 
-socket.on('game:state', function(state){
-  bumpHeartbeat();
-  render(state);
-});
+socket.on('game:state', render);
 
-socket.on('round:active-flash', function(){
-  bumpHeartbeat();
-  soundReset();
-});
+socket.on('round:active-flash', function(){ soundReset(); });
 
-// ── Render ────────────────────────────────────────────────────
 function render(state){
   document.getElementById('a-round').textContent     = state.round;
   document.getElementById('a-countdown').textContent = state.countdown!=null ? state.countdown : '-';
@@ -263,17 +181,6 @@ function render(state){
         return '<div class="lb-item"><span>'+(MEDALS[i]||'•')+' '+p.name+'</span><span>'+p.score+'</span></div>';
       }).join('')
     : '<p style="color:#aaa;text-align:center">لا يوجد لاعبون بعد</p>';
-}
-
-// ── Create room ───────────────────────────────────────────────
-function createRoom(){
-  var name = document.getElementById('game-name').value.trim();
-  var code = document.getElementById('room-code').value.trim();
-  var err  = document.getElementById('setup-error');
-  err.textContent='';
-  if(!name){ err.textContent='أدخل اسم اللعبة.'; return; }
-  if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام بالضبط.'; return; }
-  socket.emit('admin:create-room',{ gameName:name, roomCode:code });
 }
 </script>
 </body>
