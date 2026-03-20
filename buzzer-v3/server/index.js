@@ -1,129 +1,87 @@
 /**
- * server/index.js
- * ─────────────────────────────────────────────────────────────
- * Multi-room buzzer game server.
- *
- * Room store shape (rooms Map):
- * {
- *   roomCode  : "1234",
- *   gameName  : "Quiz Night",
- *   adminId   : socket.id,           // socket that created the room
- *   state: {
- *     gameLocked  : false,
- *     roundLocked : true,
- *     round       : 1,
- *     countdown   : 5,
- *     winnerId    : null,
- *     winnerName  : null,
- *     lastEvent   : "...",
- *     blockedIds  : [],              // locked out for current round
- *     answerTimer : null,
- *     players     : Map<id, player>  // NOT serialised directly
- *   }
- * }
- *
- * Socket events received  → handler
- * ─────────────────────────────────
- * admin:create-room        { gameName, roomCode }
- * player:join              { name, roomCode }
- * player:buzz              { roomCode, sentAt }
- * admin:give-point         { roomCode }
- * admin:reset-round        { roomCode }
- * admin:new-game           { roomCode }
- * admin:end-game           { roomCode }
- * admin:unlock-buzzer      { roomCode }
- *
- * Socket events emitted    → recipients
- * ─────────────────────────────────────
- * room:created             → admin socket
- * room:error               → requesting socket
- * player:self              → joining player socket
- * game:state               → all sockets in room
- * round:active-flash       → all sockets in room
- * answer:tick              → all sockets in room
- * answer:done              → all sockets in room
+ * server/index.js  —  v4
+ * Changes: persistent player IDs, admin:rejoin, client:resync,
+ * no answer timer, auto-round-reset after give-point,
+ * full state unicast on every (re)connection.
  */
 
 const express    = require('express');
 const http       = require('http');
 const { Server } = require('socket.io');
 const path       = require('path');
-const { v4: uuidv4 } = require('uuid');
-
-// ── tiny uuid shim if uuid not available ──────────────────────
-function makeId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, { cors: { origin: '*' } });
+const io     = new Server(server, {
+  cors        : { origin: '*' },
+  pingTimeout : 60000,
+  pingInterval: 25000,
+});
 
-const PORT = process.env.PORT || 4000;
-const COUNTDOWN_SECS    = 5;
-const ANSWER_TIMER_SECS = 3;
+const PORT           = process.env.PORT || 4000;
+const COUNTDOWN_SECS = 5;
 
-// ── Serve static files from /public ───────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// ── Room store ────────────────────────────────────────────────
-// Map<roomCode, room>
 const rooms = new Map();
 
 // ── Helpers ───────────────────────────────────────────────────
+function makeId() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
 function playerView(p) {
   return { id: p.id, name: p.name, score: p.score, status: p.status, hasPressed: p.hasPressed };
 }
 
 function serialiseRoom(room) {
   const { state } = room;
-  const players = [...state.players.values()].map(playerView)
+  const players = [...state.players.values()]
+    .map(playerView)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   return {
-    gameName    : room.gameName,
-    roomCode    : room.roomCode,
-    gameLocked  : state.gameLocked,
-    roundLocked : state.roundLocked,
-    round       : state.round,
-    countdown   : state.countdown,
-    winnerId    : state.winnerId,
-    winnerName  : state.winnerName,
-    lastEvent   : state.lastEvent,
-    blockedIds  : state.blockedIds,
-    answerTimer : state.answerTimer,
+    gameName   : room.gameName,
+    roomCode   : room.roomCode,
+    gameLocked : state.gameLocked,
+    roundLocked: state.roundLocked,
+    round      : state.round,
+    countdown  : state.countdown,
+    winnerId   : state.winnerId,
+    winnerName : state.winnerName,
+    lastEvent  : state.lastEvent,
+    blockedIds : state.blockedIds,
     players,
   };
 }
 
-function broadcast(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room) return;
-  io.to(roomCode).emit('game:state', serialiseRoom(room));
+function broadcast(code) {
+  const room = rooms.get(code);
+  if (room) io.to(code).emit('game:state', serialiseRoom(room));
+}
+
+function unicastState(socket, code) {
+  const room = rooms.get(code);
+  if (room) socket.emit('game:state', serialiseRoom(room));
 }
 
 function defaultState() {
   return {
-    gameLocked  : false,
-    roundLocked : true,
-    round       : 1,
-    countdown   : COUNTDOWN_SECS,
-    winnerId    : null,
-    winnerName  : null,
-    lastEvent   : 'في انتظار بداية الجولة من المدير.',
-    blockedIds  : [],
-    answerTimer : null,
-    players     : new Map(),
-    _cTimer     : null,   // countdown interval handle
-    _aTimer     : null,   // answer timer interval handle
+    gameLocked : false,
+    roundLocked: true,
+    round      : 1,
+    countdown  : COUNTDOWN_SECS,
+    winnerId   : null,
+    winnerName : null,
+    lastEvent  : 'في انتظار بداية الجولة من المدير.',
+    blockedIds : [],
+    players    : new Map(),
+    _cTimer    : null,
   };
 }
 
-// ── Round helpers (operate on a room's state) ─────────────────
 function clearTimers(state) {
   clearInterval(state._cTimer);
-  clearInterval(state._aTimer);
   state._cTimer = null;
-  state._aTimer = null;
 }
 
 function resetRoundState(state) {
@@ -132,281 +90,235 @@ function resetRoundState(state) {
   state.winnerId    = null;
   state.winnerName  = null;
   state.blockedIds  = [];
-  state.answerTimer = null;
-  for (const p of state.players.values()) {
-    p.hasPressed = false;
-    p.status     = 'ready';
-  }
+  for (const p of state.players.values()) { p.hasPressed = false; p.status = 'ready'; }
 }
 
-function startCountdown(roomCode) {
-  const room  = rooms.get(roomCode);
+function startCountdown(code) {
+  const room = rooms.get(code);
   if (!room) return;
-  const state = room.state;
-
+  const { state } = room;
   clearInterval(state._cTimer);
-  state.countdown  = COUNTDOWN_SECS;
-  state.lastEvent  = `الجولة ${state.round} تبدأ خلال ${state.countdown}s`;
-  broadcast(roomCode);
+  state.countdown = COUNTDOWN_SECS;
+  state.lastEvent = `الجولة ${state.round} تبدأ خلال ${state.countdown}s`;
+  broadcast(code);
 
   state._cTimer = setInterval(() => {
     state.countdown -= 1;
     if (state.countdown <= 0) {
-      clearInterval(state._cTimer);
-      state._cTimer     = null;
+      clearInterval(state._cTimer); state._cTimer = null;
       state.roundLocked = false;
       state.lastEvent   = `الجولة ${state.round} بدأت الآن!`;
-      broadcast(roomCode);
-      io.to(roomCode).emit('round:active-flash');
+      broadcast(code);
+      io.to(code).emit('round:active-flash');
       return;
     }
     state.lastEvent = `الجولة ${state.round} تبدأ خلال ${state.countdown}s`;
-    broadcast(roomCode);
+    broadcast(code);
   }, 1000);
-}
-
-function startAnswerTimer(roomCode) {
-  const room  = rooms.get(roomCode);
-  if (!room) return;
-  const state = room.state;
-
-  clearInterval(state._aTimer);
-  state.answerTimer = ANSWER_TIMER_SECS;
-  io.to(roomCode).emit('answer:tick', { secs: state.answerTimer });
-
-  state._aTimer = setInterval(() => {
-    state.answerTimer -= 1;
-    if (state.answerTimer <= 0) {
-      clearInterval(state._aTimer);
-      state._aTimer     = null;
-      state.answerTimer = null;
-      io.to(roomCode).emit('answer:done');
-      return;
-    }
-    io.to(roomCode).emit('answer:tick', { secs: state.answerTimer });
-  }, 1000);
-}
-
-function stopAnswerTimer(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room) return;
-  clearInterval(room.state._aTimer);
-  room.state._aTimer     = null;
-  room.state.answerTimer = null;
-  io.to(roomCode).emit('answer:done');
 }
 
 // ── Socket.io ─────────────────────────────────────────────────
 io.on('connection', (socket) => {
 
-  // ── Admin: create room ───────────────────────────────────────
+  // 1. Admin create room
   socket.on('admin:create-room', ({ gameName, roomCode }) => {
     const code = String(roomCode || '').trim();
     const name = String(gameName  || '').trim();
+    if (!/^\d{4}$/.test(code)) return socket.emit('room:error', 'الرمز يجب أن يكون 4 أرقام بالضبط.');
+    if (!name)                  return socket.emit('room:error', 'أدخل اسم اللعبة.');
+    if (rooms.has(code))        return socket.emit('room:error', `الرمز ${code} مستخدم بالفعل.`);
 
-    if (!/^\d{4}$/.test(code)) {
-      return socket.emit('room:error', 'الرمز يجب أن يكون 4 أرقام بالضبط.');
-    }
-    if (!name) {
-      return socket.emit('room:error', 'أدخل اسم اللعبة.');
-    }
-    if (rooms.has(code)) {
-      return socket.emit('room:error', `الرمز ${code} مستخدم بالفعل. اختر رمزاً آخر.`);
-    }
-
-    const room = {
-      roomCode : code,
-      gameName : name,
-      adminId  : socket.id,
-      state    : defaultState(),
-    };
+    const room = { roomCode: code, gameName: name, adminSocketId: socket.id, state: defaultState() };
     rooms.set(code, room);
     socket.join(code);
     socket.data.roomCode = code;
     socket.data.isAdmin  = true;
-
     socket.emit('room:created', { roomCode: code, gameName: name });
     broadcast(code);
     console.log(`[room created] ${code} "${name}"`);
   });
 
-  // ── Player: join room ────────────────────────────────────────
-  socket.on('player:join', ({ name, roomCode }) => {
-    const code     = String(roomCode || '').trim();
-    const trimName = String(name || '').trim().slice(0, 30);
-
-    if (!trimName) return socket.emit('room:error', 'أدخل اسمك.');
-    if (!/^\d{4}$/.test(code)) return socket.emit('room:error', 'الرمز يجب أن يكون 4 أرقام.');
-
+  // 2. Admin rejoin after refresh/reconnect
+  socket.on('admin:rejoin', ({ roomCode }) => {
+    const code = String(roomCode || '').trim();
     const room = rooms.get(code);
-    if (!room) return socket.emit('room:error', `لا توجد غرفة بالرمز ${code}.`);
-    if (room.state.gameLocked) return socket.emit('room:error', 'اللعبة منتهية. انتظر جولة جديدة.');
+    if (!room) return socket.emit('room:error', `لا توجد غرفة ${code}.`);
+    room.adminSocketId   = socket.id;
+    socket.data.roomCode = code;
+    socket.data.isAdmin  = true;
+    socket.join(code);
+    socket.emit('room:created', { roomCode: code, gameName: room.gameName });
+    unicastState(socket, code);
+    console.log(`[admin rejoined] room ${code}`);
+  });
 
-    // Unique name check
-    const nameTaken = [...room.state.players.values()]
-      .some(p => p.name.toLowerCase() === trimName.toLowerCase());
-    if (nameTaken) {
-      return socket.emit('room:error', `الاسم "${trimName}" مستخدم في هذه الغرفة. اختر اسماً آخر.`);
+  // 3. Player resync (soft reconnect — no form needed)
+  socket.on('client:resync', ({ persistentId, roomCode }) => {
+    const code = String(roomCode     || '').trim();
+    const pid  = String(persistentId || '').trim();
+    const room = rooms.get(code);
+    if (!room || !pid) return;
+    const player = room.state.players.get(pid);
+    if (!player) return;  // stale id — client will show join form
+
+    if (player.status === 'offline') player.status = 'ready';
+    socket.join(code);
+    socket.data.roomCode     = code;
+    socket.data.persistentId = pid;
+    socket.data.isAdmin      = false;
+    socket.emit('player:self', playerView(player));
+    unicastState(socket, code);
+    room.state.lastEvent = `${player.name} عاد إلى اللعبة.`;
+    broadcast(code);
+    console.log(`[player resynced] ${player.name} → room ${code}`);
+  });
+
+  // 4. Player join (first time)
+  socket.on('player:join', ({ name, roomCode, persistentId }) => {
+    const code     = String(roomCode     || '').trim();
+    const trimName = String(name         || '').trim().slice(0, 30);
+    const pid      = String(persistentId || '').trim();
+
+    if (!trimName)               return socket.emit('room:error', 'أدخل اسمك.');
+    if (!/^\d{4}$/.test(code))   return socket.emit('room:error', 'الرمز يجب أن يكون 4 أرقام.');
+    const room = rooms.get(code);
+    if (!room)                   return socket.emit('room:error', `لا توجد غرفة بالرمز ${code}.`);
+    if (room.state.gameLocked)   return socket.emit('room:error', 'اللعبة منتهية.');
+
+    // Treat as resync if persistent id already in room
+    if (pid && room.state.players.has(pid)) {
+      const ex = room.state.players.get(pid);
+      if (ex.status === 'offline') ex.status = 'ready';
+      socket.join(code);
+      socket.data.roomCode = code; socket.data.persistentId = pid; socket.data.isAdmin = false;
+      socket.emit('player:self', playerView(ex));
+      unicastState(socket, code);
+      room.state.lastEvent = `${ex.name} عاد.`;
+      broadcast(code);
+      return;
     }
 
-    const player = {
-      id        : makeId(),
-      name      : trimName,
-      score     : 0,
-      status    : 'ready',
-      hasPressed: false,
-    };
-    room.state.players.set(player.id, player);
-    socket.join(code);
-    socket.data.roomCode  = code;
-    socket.data.playerId  = player.id;
-    socket.data.isAdmin   = false;
+    const nameTaken = [...room.state.players.values()]
+      .some(p => p.name.toLowerCase() === trimName.toLowerCase());
+    if (nameTaken) return socket.emit('room:error', `الاسم "${trimName}" مستخدم. اختر اسماً آخر.`);
 
+    const newPid  = pid || makeId();
+    const player  = { id: newPid, name: trimName, score: 0, status: 'ready', hasPressed: false };
+    room.state.players.set(newPid, player);
+    socket.join(code);
+    socket.data.roomCode = code; socket.data.persistentId = newPid; socket.data.isAdmin = false;
     socket.emit('player:self', playerView(player));
-    room.state.lastEvent = `${trimName} انضم إلى اللعبة.`;
+    room.state.lastEvent = `${trimName} انضم.`;
     broadcast(code);
     console.log(`[player joined] ${trimName} → room ${code}`);
   });
 
-  // ── Player: buzz ─────────────────────────────────────────────
-  socket.on('player:buzz', ({ sentAt }) => {
-    const { roomCode, playerId } = socket.data;
-    const room = rooms.get(roomCode);
+  // 5. Player buzz
+  socket.on('player:buzz', ({ roomCode: rc, sentAt }) => {
+    const code = rc || socket.data.roomCode;
+    const pid  = socket.data.persistentId;
+    const room = rooms.get(code);
     if (!room) return;
     const { state } = room;
-
-    if (state.gameLocked || state.roundLocked) return;
-    if (state.blockedIds.includes(playerId)) return;
-
-    const player = state.players.get(playerId);
+    if (state.gameLocked || state.roundLocked || state.blockedIds.includes(pid)) return;
+    const player = state.players.get(pid);
     if (!player || player.hasPressed) return;
-
     player.hasPressed = true;
-
     if (!state.winnerId) {
-      state.winnerId    = player.id;
+      state.winnerId    = pid;
       state.winnerName  = player.name;
       state.roundLocked = true;
       player.status     = 'winner';
-      for (const p of state.players.values()) {
-        if (p.id !== player.id) p.status = 'too-late';
-      }
-      state.lastEvent = `${player.name} ضغط أولاً!`;
-      io.to(roomCode).emit('round:winner', {
-        winnerId  : player.id,
-        winnerName: player.name,
-        sentAt,
-      });
-      broadcast(roomCode);
-      startAnswerTimer(roomCode);
-    } else {
-      broadcast(roomCode);
+      for (const p of state.players.values()) { if (p.id !== pid) p.status = 'too-late'; }
+      state.lastEvent   = `${player.name} ضغط أولاً!`;
+      io.to(code).emit('round:winner', { winnerId: pid, winnerName: player.name, sentAt });
     }
+    broadcast(code);
   });
 
-  // ── Admin: give point ────────────────────────────────────────
-  socket.on('admin:give-point', ({ roomCode }) => {
-    const room = rooms.get(roomCode);
+  // 6. Admin give point → AUTO-RESET round
+  socket.on('admin:give-point', ({ roomCode: rc }) => {
+    const code = rc || socket.data.roomCode;
+    const room = rooms.get(code);
     if (!room || !room.state.winnerId) return;
     const winner = room.state.players.get(room.state.winnerId);
     if (!winner) return;
     winner.score += 1;
-    room.state.lastEvent = `${winner.name} حصل على +1 نقطة.`;
-    stopAnswerTimer(roomCode);
-    broadcast(roomCode);
+    const scoredName = winner.name;
+    resetRoundState(room.state);
+    room.state.lastEvent = `✅ ${scoredName} حصل على نقطة — الجولة التالية تبدأ!`;
+    startCountdown(code);
   });
 
-  // ── Admin: reset round ───────────────────────────────────────
-  socket.on('admin:reset-round', ({ roomCode }) => {
-    const room = rooms.get(roomCode);
+  // 7. Admin manual reset round
+  socket.on('admin:reset-round', ({ roomCode: rc }) => {
+    const code = rc || socket.data.roomCode;
+    const room = rooms.get(code);
     if (!room || room.state.gameLocked) return;
     resetRoundState(room.state);
-    room.state.lastEvent = 'تم إعادة تعيين الجولة.';
-    startCountdown(roomCode);
+    room.state.lastEvent = 'تم إعادة تعيين الجولة يدوياً.';
+    startCountdown(code);
   });
 
-  // ── Admin: new game ──────────────────────────────────────────
-  socket.on('admin:new-game', ({ roomCode }) => {
-    const room = rooms.get(roomCode);
+  // 8. Admin new game
+  socket.on('admin:new-game', ({ roomCode: rc }) => {
+    const code = rc || socket.data.roomCode;
+    const room = rooms.get(code);
     if (!room) return;
     room.state.gameLocked = false;
     room.state.round += 1;
     for (const p of room.state.players.values()) p.score = 0;
     resetRoundState(room.state);
-    room.state.lastEvent = `لعبة جديدة بدأت. الجولة ${room.state.round}.`;
-    startCountdown(roomCode);
+    room.state.lastEvent = `لعبة جديدة — الجولة ${room.state.round}.`;
+    startCountdown(code);
   });
 
-  // ── Admin: end game ──────────────────────────────────────────
-  socket.on('admin:end-game', ({ roomCode }) => {
-    const room = rooms.get(roomCode);
+  // 9. Admin end game
+  socket.on('admin:end-game', ({ roomCode: rc }) => {
+    const code = rc || socket.data.roomCode;
+    const room = rooms.get(code);
     if (!room) return;
-    stopAnswerTimer(roomCode);
     clearTimers(room.state);
     room.state.gameLocked  = true;
     room.state.roundLocked = true;
     room.state.lastEvent   = 'انتهت اللعبة.';
-    broadcast(roomCode);
+    broadcast(code);
   });
 
-  // ── Admin: unlock buzzer (wrong answer) ──────────────────────
-  socket.on('admin:unlock-buzzer', ({ roomCode }) => {
-    const room = rooms.get(roomCode);
+  // 10. Admin unlock buzzer (wrong answer)
+  socket.on('admin:unlock-buzzer', ({ roomCode: rc }) => {
+    const code = rc || socket.data.roomCode;
+    const room = rooms.get(code);
     if (!room || !room.state.winnerId) return;
     const { state } = room;
-
-    const wrongPlayer = state.players.get(state.winnerId);
-    if (!wrongPlayer) return;
-
-    stopAnswerTimer(roomCode);
-    if (!state.blockedIds.includes(state.winnerId)) {
-      state.blockedIds.push(state.winnerId);
-    }
-    wrongPlayer.status     = 'wrong';
-    wrongPlayer.hasPressed = true;
-
-    state.winnerId    = null;
-    state.winnerName  = null;
-    state.roundLocked = false;
-    state.answerTimer = null;
-
+    const wrong = state.players.get(state.winnerId);
+    if (!wrong) return;
+    if (!state.blockedIds.includes(state.winnerId)) state.blockedIds.push(state.winnerId);
+    wrong.status = 'wrong'; wrong.hasPressed = true;
+    state.winnerId = null; state.winnerName = null; state.roundLocked = false;
     for (const p of state.players.values()) {
-      if (!state.blockedIds.includes(p.id)) {
-        p.hasPressed = false;
-        p.status     = 'ready';
-      }
+      if (!state.blockedIds.includes(p.id)) { p.hasPressed = false; p.status = 'ready'; }
     }
-
-    state.lastEvent = `${wrongPlayer.name} أجاب خطأ — الزر مفتوح للبقية.`;
-    broadcast(roomCode);
-    io.to(roomCode).emit('round:active-flash');
+    state.lastEvent = `${wrong.name} أجاب خطأ — الزر مفتوح للبقية.`;
+    broadcast(code);
+    io.to(code).emit('round:active-flash');
   });
 
-  // ── Disconnect ───────────────────────────────────────────────
+  // 11. Disconnect — keep record, just mark offline
   socket.on('disconnect', () => {
-    const { roomCode, playerId, isAdmin } = socket.data;
-    const room = rooms.get(roomCode);
+    const { roomCode: code, persistentId: pid, isAdmin } = socket.data;
+    const room = rooms.get(code);
     if (!room) return;
-
     if (isAdmin) {
-      // Admin left — notify room but keep it alive
-      room.state.lastEvent = 'المدير قطع الاتصال.';
-      room.adminId = null;
-      broadcast(roomCode);
-    } else if (playerId) {
-      const p = room.state.players.get(playerId);
-      if (p) {
-        p.status = 'offline';
-        room.state.lastEvent = `${p.name} خرج من اللعبة.`;
-        broadcast(roomCode);
-      }
+      room.state.lastEvent = 'المدير قطع الاتصال مؤقتاً.';
+      broadcast(code);
+    } else if (pid) {
+      const p = room.state.players.get(pid);
+      if (p) { p.status = 'offline'; room.state.lastEvent = `${p.name} خرج مؤقتاً.`; broadcast(code); }
     }
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`Buzzer server running → http://localhost:${PORT}`);
-  console.log(`  /         → home`);
-  console.log(`  /admin    → admin page`);
-  console.log(`  /play     → player page`);
+  console.log(`\nBuzzer v4  →  http://localhost:${PORT}\n`);
 });
