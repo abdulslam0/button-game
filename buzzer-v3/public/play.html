@@ -5,8 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>من يضغط الزر أولاً — لاعب</title>
 <link rel="stylesheet" href="/shared.css"/>
+<style>
+#btn-reconnect{
+  display:none;position:fixed;bottom:1.25rem;left:1.25rem;z-index:9999;
+  background:#b60012;color:#fff;border:none;border-radius:2rem;
+  padding:.6rem 1.2rem;font-size:.95rem;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 16px rgba(182,0,18,.5);font-family:'Tajawal',sans-serif;
+  direction:rtl;
+}
+#btn-reconnect.vis{
+  display:block;
+  animation:rcpulse 2s ease-in-out infinite;
+}
+@keyframes rcpulse{0%,100%{opacity:1}50%{opacity:.55}}
+</style>
 </head>
 <body>
+
+<button id="btn-reconnect" onclick="manualReconnect()">⚡ إعادة اتصال</button>
 
 <!-- JOIN FORM -->
 <div id="view-join" style="display:flex;flex-direction:column;align-items:center;width:100%">
@@ -20,7 +36,8 @@
     <input type="text" id="player-name" placeholder="اسمك هنا..." maxlength="30"/>
     <label style="font-size:.95rem;font-weight:700;display:block;margin-top:.75rem;margin-bottom:.1rem">رمز الغرفة (4 أرقام)</label>
     <input type="number" id="join-code" placeholder="أدخل الرمز" min="0" max="9999"
-           oninput="this.value=this.value.slice(0,4)" style="letter-spacing:.25em;font-weight:900"/>
+           oninput="this.value=this.value.slice(0,4)"
+           style="letter-spacing:.25em;font-weight:900"/>
     <div class="form-error" id="join-error"></div>
     <button class="btn btn-red" style="margin-top:.75rem" onclick="joinGame()">دخول</button>
   </div>
@@ -41,7 +58,12 @@
   </div>
   <div class="buzzer-wrap">
     <div id="countdown-badge"></div>
-    <button id="buzzer" disabled onclick="buzz()"></button>
+    <!--
+      NO "disabled" attribute here.
+      JS owns the disabled state 100% via setBuzzer().
+      Starting enabled=false is set immediately by JS below.
+    -->
+    <button id="buzzer" onclick="buzz()"></button>
     <p id="player-msg">جاهز؟ انتظر بداية الجولة.</p>
   </div>
   <div class="card" style="margin-top:1rem">
@@ -55,66 +77,145 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-/*
- * play.html — v4
- *
- * Persistence keys (localStorage):
- *   buzzer_pid   persistent player id (server-assigned)
- *   buzzer_room  last joined room code
- *   buzzer_name  player name
- *
- * On page load:
- *   If pid + room exist → emit client:resync (silent reconnect).
- *   Server replies with player:self + game:state → skip form.
- *   If server doesn't know the id → stay on join form.
- */
+// ─────────────────────────────────────────────────────────────
+// play.html — v6
+//
+// ROOT CAUSE FIX for "red button does nothing":
+//   The HTML had disabled="" on #buzzer. render() sets bz.disabled
+//   but only runs when myId is known. If game:state arrives before
+//   player:self (common after reconnect), myId is null → render()
+//   bails → buzzer stays disabled forever.
+//
+//   Fix: Remove disabled attribute from HTML. JS sets it immediately
+//   on page load. setBuzzer() is called in BOTH player:self AND
+//   game:state, so the button is always correct regardless of
+//   event arrival order.
+// ─────────────────────────────────────────────────────────────
 
-const LS_PID  = 'buzzer_pid';
-const LS_ROOM = 'buzzer_room';
-const LS_NAME = 'buzzer_name';
+var LS_PID  = 'buzzer_pid';
+var LS_ROOM = 'buzzer_room';
+var LS_NAME = 'buzzer_name';
 
-const socket    = io({ reconnectionDelay: 1000, reconnectionDelayMax: 5000 });
-let   myId      = null;
-let   roomCode  = null;
-let   iAmBuzzer = false;
+var socket    = io({ reconnectionDelay:1000, reconnectionDelayMax:5000 });
+var myId      = null;
+var roomCode  = null;
+var iAmBuzzer = false;
+var lastState = null;   // cache so player:self can re-apply it immediately
 
-// Sound
-const AC = typeof AudioContext !== 'undefined' ? new AudioContext() : null;
+// Disable buzzer immediately on load (JS owns this, not HTML)
+document.getElementById('buzzer').disabled = true;
+
+// ── Heartbeat ────────────────────────────────────────────────
+var lastHeartbeat = Date.now();
+function bumpHeartbeat(){ lastHeartbeat = Date.now(); }
+setInterval(function(){
+  if(Date.now() - lastHeartbeat > 15000){
+    console.log('[heartbeat] stale, forcing resync');
+    forceResync();
+  }
+}, 5000);
+
+// ── Resync helpers ────────────────────────────────────────────
+function emitResync(){
+  var pid  = myId  || localStorage.getItem(LS_PID);
+  var room = roomCode || localStorage.getItem(LS_ROOM);
+  var name = localStorage.getItem(LS_NAME);
+  if(pid && room){
+    socket.emit('client:resync',{ persistentId:pid, roomCode:room });
+  } else if(room && name){
+    socket.emit('player:join',{
+      name: name,
+      roomCode: room,
+      persistentId: localStorage.getItem(LS_PID)||undefined
+    });
+  }
+}
+
+function forceResync(){
+  if(!socket.connected){ socket.connect(); }
+  else { emitResync(); }
+}
+
+// ── Reconnect button ──────────────────────────────────────────
+var _rcBtn = document.getElementById('btn-reconnect');
+function setReconnectBtn(on){
+  if(on) _rcBtn.classList.add('vis');
+  else   _rcBtn.classList.remove('vis');
+}
+function manualReconnect(){
+  setReconnectBtn(false);
+  forceResync();
+}
+
+// ── Visibility radar ──────────────────────────────────────────
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState==='visible'){
+    if(!socket.connected) socket.connect();
+    else emitResync();
+  }
+});
+
+// ── Sounds ────────────────────────────────────────────────────
+var AC = typeof AudioContext!=='undefined' ? new AudioContext() : null;
 function tone(f,d,t,v){
-  t=t||'sine';v=v||0.35;
-  if(!AC)return; if(AC.state==='suspended')AC.resume();
-  var o=AC.createOscillator(),g=AC.createGain();
+  t=t||'sine'; v=v||0.35;
+  if(!AC) return;
+  if(AC.state==='suspended') AC.resume();
+  var o=AC.createOscillator(), g=AC.createGain();
   o.type=t; o.frequency.value=f;
-  g.gain.setValueAtTime(v,AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);
-  o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);
+  g.gain.setValueAtTime(v, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+d);
+  o.connect(g); g.connect(AC.destination);
+  o.start(); o.stop(AC.currentTime+d);
 }
 function soundPress()  { tone(320,0.12,'square',0.4); }
-function soundWinner() { [523,659,784].forEach(function(f,i){setTimeout(function(){tone(f,0.3,'sine',0.45);},i*140);}); }
+function soundWinner() {
+  [523,659,784].forEach(function(f,i){
+    setTimeout(function(){ tone(f,0.3,'sine',0.45); }, i*140);
+  });
+}
 function soundReset()  { tone(440,0.2); setTimeout(function(){tone(550,0.15);},80); }
 
+// ── Status helpers ────────────────────────────────────────────
 function statusLabel(s){
-  return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
+  return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',
+          offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
 }
 function statusClass(s){
-  return {winner:'status-winner',ready:'status-ready','too-late':'status-too-late',offline:'status-offline',wrong:'status-wrong'}[s]||'';
+  return {winner:'status-winner',ready:'status-ready',
+          'too-late':'status-too-late',offline:'status-offline',
+          wrong:'status-wrong'}[s]||'';
 }
 
 function setMsg(m){
   var el=document.getElementById('player-msg');
-  if(!el)return;
+  if(!el) return;
   el.style.opacity='0';
   setTimeout(function(){ el.textContent=m; el.style.opacity='1'; },150);
 }
 
+// ── THE KEY FIX — setBuzzer() is the single source of truth ──
+// Called every time player:self OR game:state arrives, in both cases.
+function setBuzzer(state, me){
+  var bz=document.getElementById('buzzer');
+  if(!bz) return;
+  if(!me || !state){
+    bz.disabled=true;
+    return;
+  }
+  var isBlocked=(state.blockedIds||[]).indexOf(me.id)>-1;
+  bz.disabled = !!(state.gameLocked || state.roundLocked || me.hasPressed || isBlocked);
+}
+
+// ── Show play view ────────────────────────────────────────────
 function showPlayView(name, code){
-  document.getElementById('p-name').textContent      = name;
-  document.getElementById('p-room-code').textContent = code;
+  document.getElementById('p-name').textContent       = name;
+  document.getElementById('p-room-code').textContent  = code;
   document.getElementById('view-join').style.display  = 'none';
   document.getElementById('view-play').style.display  = 'flex';
 }
 
-// On load — attempt silent resync
+// ── On load — attempt silent resync ──────────────────────────
 window.addEventListener('load', function(){
   var pid  = localStorage.getItem(LS_PID);
   var room = localStorage.getItem(LS_ROOM);
@@ -122,49 +223,114 @@ window.addEventListener('load', function(){
   if(pid && room){
     document.getElementById('player-name').value = name||'';
     document.getElementById('join-code').value   = room;
-    socket.emit('client:resync', { persistentId: pid, roomCode: room });
+    socket.emit('client:resync',{ persistentId:pid, roomCode:room });
   }
 });
 
-// Manual join
+// ── Manual join ───────────────────────────────────────────────
 function joinGame(){
-  var name = document.getElementById('player-name').value.trim().slice(0,30);
-  var code = document.getElementById('join-code').value.trim();
-  var err  = document.getElementById('join-error');
-  err.textContent = '';
+  var name=document.getElementById('player-name').value.trim().slice(0,30);
+  var code=document.getElementById('join-code').value.trim();
+  var err =document.getElementById('join-error');
+  err.textContent='';
   if(!name){ err.textContent='أدخل اسمك.'; return; }
   if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام.'; return; }
-  var pid = localStorage.getItem(LS_PID)||undefined;
-  socket.emit('player:join', { name: name, roomCode: code, persistentId: pid });
+  var pid=localStorage.getItem(LS_PID)||undefined;
+  socket.emit('player:join',{ name:name, roomCode:code, persistentId:pid });
 }
 
+// ── Buzz ──────────────────────────────────────────────────────
 function buzz(){
   soundPress();
-  socket.emit('player:buzz', { roomCode: roomCode, sentAt: Date.now() });
+  socket.emit('player:buzz',{ roomCode:roomCode, sentAt:Date.now() });
 }
 
-// Socket events
+// ── Socket lifecycle ──────────────────────────────────────────
+socket.on('connect', function(){
+  bumpHeartbeat();
+  setReconnectBtn(false);
+  if(myId && roomCode){
+    socket.emit('client:resync',{ persistentId:myId, roomCode:roomCode });
+  } else {
+    var pid =localStorage.getItem(LS_PID);
+    var room=localStorage.getItem(LS_ROOM);
+    if(pid && room) socket.emit('client:resync',{ persistentId:pid, roomCode:room });
+  }
+});
+
+socket.on('disconnect',    function(){ setReconnectBtn(true);  });
+socket.on('connect_error', function(){ setReconnectBtn(true);  });
+
+// ── player:self ───────────────────────────────────────────────
+// Fires on first join AND every resync.
 socket.on('player:self', function(player){
+  bumpHeartbeat();
   myId     = player.id;
-  roomCode = localStorage.getItem(LS_ROOM) || document.getElementById('join-code').value.trim();
+  roomCode = localStorage.getItem(LS_ROOM) ||
+             document.getElementById('join-code').value.trim();
   localStorage.setItem(LS_PID,  player.id);
   localStorage.setItem(LS_ROOM, roomCode);
   localStorage.setItem(LS_NAME, player.name);
   showPlayView(player.name, roomCode);
+
+  // If we already have a cached state (arrived before player:self),
+  // apply buzzer state immediately — don't wait for next game:state.
+  if(lastState){
+    var me=lastState.players.find(function(p){ return p.id===myId; });
+    setBuzzer(lastState, me||null);
+    renderTable(lastState);
+  }
 });
 
+// ── room:error ────────────────────────────────────────────────
 socket.on('room:error', function(msg){
+  bumpHeartbeat();
   var el=document.getElementById('join-error');
   if(el) el.textContent=msg;
 });
 
+// ── game:state ────────────────────────────────────────────────
 socket.on('game:state', function(state){
-  if(state.gameName) document.getElementById('p-game-name').textContent=state.gameName;
-  if(!roomCode && state.roomCode) roomCode=state.roomCode;
-  render(state);
+  bumpHeartbeat();
+  lastState=state;   // always cache
+
+  if(state.gameName)
+    document.getElementById('p-game-name').textContent=state.gameName;
+  if(!roomCode && state.roomCode)
+    roomCode=state.roomCode;
+
+  // Update stat bar whether or not we know myId yet
+  document.getElementById('p-round').textContent=state.round;
+  document.getElementById('p-countdown').textContent=
+    (state.roundLocked && !state.winnerId) ? state.countdown : '-';
+
+  var cb=document.getElementById('countdown-badge');
+  if(cb) cb.textContent=
+    (!state.winnerId&&state.roundLocked&&!state.gameLocked&&state.countdown>0)
+      ? state.countdown : '';
+
+  if(!myId) return;   // can't do player-specific work yet
+
+  var me=state.players.find(function(p){ return p.id===myId; });
+  if(!me) return;
+
+  document.getElementById('p-score').textContent=me.score;
+
+  // ← THE FIX: call setBuzzer here, not inline bz.disabled=...
+  setBuzzer(state, me);
+
+  var isBlocked=(state.blockedIds||[]).indexOf(myId)>-1;
+  if(isBlocked && me.status==='wrong')
+    setMsg('❌ إجابة خاطئة — أنت خارج هذه الجولة');
+  if(me.status==='winner' && iAmBuzzer)
+    setMsg('🎉 أنت الأول! أجب الآن');
+
+  renderTable(state);
 });
 
+// ── round:winner ─────────────────────────────────────────────
 socket.on('round:winner', function(d){
+  bumpHeartbeat();
   if(d.winnerId===myId){
     setMsg('🎉 أنت الأول! أجب الآن');
     soundWinner();
@@ -175,7 +341,9 @@ socket.on('round:winner', function(d){
   }
 });
 
+// ── round:active-flash ────────────────────────────────────────
 socket.on('round:active-flash', function(){
+  bumpHeartbeat();
   soundReset();
   iAmBuzzer=false;
   var bz=document.getElementById('buzzer');
@@ -183,32 +351,16 @@ socket.on('round:active-flash', function(){
   setMsg('الجولة بدأت! اضغط الآن');
 });
 
-function render(state){
-  if(!myId) return;
-  var me=state.players.find(function(p){return p.id===myId;});
-  if(!me) return;
-
-  document.getElementById('p-score').textContent = me.score;
-  document.getElementById('p-round').textContent = state.round;
-  document.getElementById('p-countdown').textContent =
-    (state.roundLocked && !state.winnerId) ? state.countdown : '-';
-
-  var isBlocked=(state.blockedIds||[]).indexOf(myId)>-1;
-  var bz=document.getElementById('buzzer');
-  if(bz) bz.disabled = state.gameLocked||state.roundLocked||me.hasPressed||isBlocked;
-
-  var cb=document.getElementById('countdown-badge');
-  if(cb) cb.textContent=(!state.winnerId&&state.roundLocked&&!state.gameLocked&&state.countdown>0)
-    ? state.countdown : '';
-
-  if(isBlocked && me.status==='wrong') setMsg('❌ إجابة خاطئة — أنت خارج هذه الجولة');
-  if(me.status==='winner' && iAmBuzzer) setMsg('🎉 أنت الأول! أجب الآن');
-
+// ── Render helpers ────────────────────────────────────────────
+function renderTable(state){
   var tb=document.getElementById('p-players-tbody');
-  if(tb) tb.innerHTML=state.players.map(function(p){
-    return '<tr><td style="font-weight:700">'+p.name+(p.id===myId?' (أنت)':'')+'</td>'
+  if(!tb) return;
+  tb.innerHTML=state.players.map(function(p){
+    return '<tr>'
+      +'<td style="font-weight:700">'+p.name+(p.id===myId?' (أنت)':'')+'</td>'
       +'<td>'+p.score+'</td>'
-      +'<td class="'+statusClass(p.status)+'">'+statusLabel(p.status)+'</td></tr>';
+      +'<td class="'+statusClass(p.status)+'">'+statusLabel(p.status)+'</td>'
+      +'</tr>';
   }).join('');
 }
 </script>
