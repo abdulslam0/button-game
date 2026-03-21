@@ -6,23 +6,73 @@
 <title>من يضغط الزر أولاً — مدير</title>
 <link rel="stylesheet" href="/shared.css"/>
 <style>
-/* ── Reconnect button ── */
-#btn-reconnect{
-  display:none;position:fixed;bottom:1.25rem;left:1.25rem;z-index:9999;
-  background:#241c15;color:#fff;border:none;border-radius:2rem;
-  padding:.55rem 1.1rem;font-size:.9rem;font-weight:700;cursor:pointer;
-  box-shadow:0 4px 14px rgba(36,28,21,.5);font-family:'Tajawal',sans-serif;
-  direction:rtl;transition:opacity .25s;
+/* ── Brand customisation panel ── */
+.brand-panel{
+  background:var(--surface);border-radius:1rem;
+  border:1.5px solid var(--border);padding:1rem;
+  margin-top:1rem;display:grid;
+  grid-template-columns:1fr 1fr;gap:.75rem;align-items:end;
 }
-#btn-reconnect.visible{ display:block; }
-@keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.6} }
-#btn-reconnect.visible{ animation:pulse 2s ease-in-out infinite; }
+.brand-panel label{font-size:.85rem;font-weight:700;color:var(--text2);display:block;margin-bottom:.25rem}
+.color-preview{
+  width:36px;height:36px;border-radius:50%;
+  border:2px solid var(--border);flex-shrink:0;
+}
+.color-row{display:flex;align-items:center;gap:.5rem}
+input[type=color]{
+  width:44px;height:44px;border:none;
+  border-radius:.5rem;cursor:pointer;padding:2px;
+  background:var(--input-bg);
+}
+.logo-upload-label{
+  display:block;text-align:center;
+  background:var(--bg);border:1.5px dashed var(--border);
+  border-radius:.75rem;padding:.6rem;font-size:.85rem;
+  font-weight:700;color:var(--text2);cursor:pointer;
+}
+.logo-upload-label:hover{border-color:var(--brand);color:var(--brand)}
+#logo-preview{
+  width:60px;height:60px;border-radius:50%;
+  object-fit:cover;display:none;margin:.5rem auto 0;
+  border:2px solid var(--border);
+}
+
+/* ── Winner overlay ── */
+#winner-overlay{
+  display:none;position:fixed;inset:0;z-index:7000;
+  flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+}
+#winner-overlay.show{display:flex;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.winner-card{
+  background:var(--surface2,#fff);border-radius:1.5rem;
+  padding:2rem 2.5rem;text-align:center;
+  box-shadow:0 20px 60px rgba(0,0,0,.4);max-width:340px;width:90%;
+}
+.winner-emoji{font-size:4rem;line-height:1;margin-bottom:.5rem}
+.winner-name{font-size:1.8rem;font-weight:900;color:var(--brand);margin:.4rem 0}
+.winner-sub{font-size:1rem;color:var(--text2);font-weight:700}
 </style>
 </head>
 <body>
 
-<!-- ══ RECONNECT BUTTON ══════════════════════════════════════ -->
-<button id="btn-reconnect" onclick="manualReconnect()">⚡ إعادة اتصال</button>
+<!-- Dark mode toggle -->
+<button id="dark-toggle" onclick="toggleDark()" title="الوضع الليلي">🌙</button>
+
+<!-- Reconnect button -->
+<button id="btn-reconnect" class="rc-btn" onclick="manualReconnect()">⚡ إعادة اتصال</button>
+
+<!-- Winner overlay -->
+<div id="winner-overlay" onclick="this.classList.remove('show')">
+  <div class="winner-card">
+    <div class="winner-emoji">🏆</div>
+    <div class="winner-name" id="ov-winner-name"></div>
+    <div class="winner-sub">ضغط الزر أولاً!</div>
+    <div id="ov-podium" class="podium" style="margin-top:1rem"></div>
+    <p style="font-size:.75rem;color:var(--text2);margin-top:1rem">اضغط في أي مكان للإغلاق</p>
+  </div>
+</div>
 
 <!-- ══ SETUP FORM ══════════════════════════════════════════════ -->
 <div id="view-setup" style="display:flex;flex-direction:column;align-items:center;width:100%">
@@ -31,12 +81,32 @@
     <h1>من يضغط الزر أولاً</h1>
   </header>
   <div class="card">
-    <h2 style="font-size:1.15rem;font-weight:900;color:#241c15;margin-bottom:1rem">إنشاء غرفة / استعادة الجلسة</h2>
+    <h2 style="font-size:1.15rem;font-weight:900;color:var(--brand);margin-bottom:1rem">إنشاء غرفة / استعادة الجلسة</h2>
+
     <label style="font-size:.95rem;font-weight:700;display:block;margin-bottom:.1rem">اسم اللعبة</label>
     <input type="text" id="game-name" placeholder="مثال: مسابقة الجمعة" maxlength="40"/>
+
     <label style="font-size:.95rem;font-weight:700;display:block;margin-top:.75rem;margin-bottom:.1rem">رمز الغرفة (4 أرقام)</label>
     <input type="number" id="room-code" placeholder="مثال: 1234" min="0" max="9999"
            oninput="this.value=this.value.slice(0,4)" style="letter-spacing:.25em;font-weight:900"/>
+
+    <!-- Brand customisation -->
+    <div class="brand-panel">
+      <div>
+        <label>🎨 لون الزر</label>
+        <div class="color-row">
+          <input type="color" id="setup-color" value="#b60012" onchange="previewColor(this.value)"/>
+          <div class="color-preview" id="color-preview" style="background:#b60012"></div>
+        </div>
+      </div>
+      <div>
+        <label>🖼 شعار مخصص</label>
+        <label class="logo-upload-label" for="logo-file">رفع صورة</label>
+        <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="handleLogo(this)"/>
+        <img id="logo-preview" alt="logo preview"/>
+      </div>
+    </div>
+
     <div class="form-error" id="setup-error"></div>
     <button class="btn btn-red" style="margin-top:.75rem" onclick="createRoom()">إنشاء الغرفة وبدء اللعبة</button>
   </div>
@@ -45,22 +115,23 @@
 <!-- ══ ADMIN DASHBOARD ═════════════════════════════════════════ -->
 <div id="view-admin" style="display:none;flex-direction:column;align-items:center;width:100%">
   <header>
-    <div class="logo-circle"><div class="logo-inner"></div></div>
+    <div class="logo-circle" id="admin-logo"><div class="logo-inner"></div></div>
     <h1 id="a-game-name">لوحة المدير</h1>
     <div class="room-badge">رمز الغرفة: <span class="room-code" id="a-room-code">----</span></div>
   </header>
 
   <div class="admin-grid">
+    <!-- Left: players + controls -->
     <div class="card" style="max-width:none">
-      <h2 style="font-size:1.1rem;font-weight:900;color:#b60012;margin-bottom:.75rem">اللاعبون المباشرون</h2>
+      <h2 style="font-size:1.1rem;font-weight:900;color:var(--brand);margin-bottom:.75rem">اللاعبون المباشرون</h2>
       <table>
         <thead><tr><th>الاسم</th><th>النقاط</th><th>الحالة</th></tr></thead>
         <tbody id="a-players-tbody">
-          <tr><td colspan="3" style="color:#aaa;text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>
+          <tr><td colspan="3" style="color:var(--text2);text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>
         </tbody>
       </table>
       <div id="event-feed">في انتظار اللاعبين...</div>
-      <div style="font-size:.9rem;font-weight:700;margin:.4rem 0;color:#555">
+      <div style="font-size:.9rem;font-weight:700;margin:.4rem 0;color:var(--text2)">
         الجولة: <span id="a-round">1</span> &nbsp;|&nbsp; العد: <span id="a-countdown">-</span>
       </div>
       <div class="admin-btns">
@@ -71,98 +142,176 @@
         <button class="btn btn-green" id="btn-unlock"      onclick="emit('admin:unlock-buzzer')" disabled
                 style="grid-column:span 2">🔓 فتح الزر للبقية (إجابة خاطئة)</button>
       </div>
+
+      <!-- Live brand controls inside dashboard -->
+      <details style="margin-top:1rem">
+        <summary style="font-size:.9rem;font-weight:700;cursor:pointer;color:var(--text2)">🎨 تخصيص الشعار والألوان</summary>
+        <div class="brand-panel" style="margin-top:.5rem">
+          <div>
+            <label>لون الزر</label>
+            <div class="color-row">
+              <input type="color" id="live-color" value="#b60012" onchange="sendBrand()"/>
+            </div>
+          </div>
+          <div>
+            <label>شعار مخصص</label>
+            <label class="logo-upload-label" for="live-logo-file">رفع صورة</label>
+            <input type="file" id="live-logo-file" accept="image/*" style="display:none"
+                   onchange="handleLiveLogo(this)"/>
+          </div>
+        </div>
+      </details>
     </div>
 
+    <!-- Right: podium + leaderboard -->
     <div class="card" style="max-width:none">
-      <h3 style="font-size:1.1rem;font-weight:900;color:#b60012;margin-bottom:.75rem">Leaderboard</h3>
-      <div id="a-leaderboard"><p style="color:#aaa;text-align:center">لا يوجد لاعبون بعد</p></div>
+      <div id="a-podium" class="podium" style="display:none;margin-bottom:1rem"></div>
+      <h3 style="font-size:1.1rem;font-weight:900;color:var(--brand);margin-bottom:.75rem">Leaderboard</h3>
+      <div id="a-leaderboard"><p style="color:var(--text2);text-align:center">لا يوجد لاعبون بعد</p></div>
     </div>
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-/*
- * admin.html — v5
- *
- * localStorage key:
- *   buzzer_admin_room   room code for silent rejoin
- *
- * Recovery mechanics:
- *   1. visibilitychange listener  — rejoin when tab/screen returns
- *   2. Heartbeat monitor          — force reconnect if > 15 s silent
- *   3. #btn-reconnect             — manual override when offline
- */
+// ════════════════════════════════════════════════════════════
+// admin.html — v8
+// ════════════════════════════════════════════════════════════
 
 var LS_ADMIN_ROOM = 'buzzer_admin_room';
+var LS_DARK       = 'buzzer_dark';
 
 var socket   = io({ reconnectionDelay:1000, reconnectionDelayMax:5000 });
 var roomCode = null;
 var MEDALS   = ['🥇','🥈','🥉'];
+var _pendingLogoUrl = '';   // logo chosen before room created
 
-// ── [A] Heartbeat tracking ────────────────────────────────────
-var lastHeartbeat  = Date.now();
-var STALE_MS       = 15000;
-var HEARTBEAT_TICK =  5000;
-
-function bumpHeartbeat(){ lastHeartbeat = Date.now(); }
-
-setInterval(function(){
-  if(Date.now() - lastHeartbeat > STALE_MS){
-    console.log('[heartbeat] admin stale — forcing reconnect');
-    forceResync();
+// ── Dark mode ─────────────────────────────────────────────────
+(function(){
+  var pref=localStorage.getItem(LS_DARK);
+  if(pref==='dark') document.body.classList.add('dark');
+  if(pref==='light') document.body.classList.add('light');
+  document.getElementById('dark-toggle').textContent=
+    (pref==='dark'||(pref!=='light'&&window.matchMedia('(prefers-color-scheme:dark)').matches))?'☀️':'🌙';
+})();
+function toggleDark(){
+  var b=document.body;
+  if(b.classList.contains('dark')){
+    b.classList.remove('dark');b.classList.add('light');
+    localStorage.setItem(LS_DARK,'light');
+    document.getElementById('dark-toggle').textContent='🌙';
+  } else {
+    b.classList.remove('light');b.classList.add('dark');
+    localStorage.setItem(LS_DARK,'dark');
+    document.getElementById('dark-toggle').textContent='☀️';
   }
-}, HEARTBEAT_TICK);
+}
 
-// ── [B] Core resync logic ─────────────────────────────────────
+// ── Heartbeat ─────────────────────────────────────────────────
+var lastHeartbeat=Date.now();
+function bumpHeartbeat(){lastHeartbeat=Date.now();}
+setInterval(function(){
+  if(Date.now()-lastHeartbeat>15000){console.log('[hb] admin stale');forceResync();}
+},5000);
+
 function emitResync(){
-  var room = roomCode || localStorage.getItem(LS_ADMIN_ROOM);
-  if(room) socket.emit('admin:rejoin',{ roomCode:room });
+  var room=roomCode||localStorage.getItem(LS_ADMIN_ROOM);
+  if(room) socket.emit('admin:rejoin',{roomCode:room});
 }
-
 function forceResync(){
-  if(!socket.connected){ socket.connect(); }
-  else { emitResync(); }
+  if(!socket.connected) socket.connect();
+  else emitResync();
 }
 
-// ── [C] Reconnect button ──────────────────────────────────────
-var btnReconnect = document.getElementById('btn-reconnect');
+// ── Reconnect button ──────────────────────────────────────────
+var _rc=document.getElementById('btn-reconnect');
+function setRC(on){ on?_rc.classList.add('vis'):_rc.classList.remove('vis'); }
+function manualReconnect(){ setRC(false); forceResync(); }
 
-function setReconnectBtn(visible){
-  if(visible){ btnReconnect.classList.add('visible'); }
-  else        { btnReconnect.classList.remove('visible'); }
-}
-
-function manualReconnect(){
-  setReconnectBtn(false);
-  forceResync();
-}
-
-// ── [D] visibilitychange ──────────────────────────────────────
-document.addEventListener('visibilitychange', function(){
-  if(document.visibilityState === 'visible'){
-    if(!socket.connected){
-      console.log('[visibility] admin tab visible, socket offline — reconnecting');
-      socket.connect();
-    } else {
-      emitResync();
-    }
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'){
+    if(!socket.connected) socket.connect(); else emitResync();
   }
 });
 
 // ── Sounds ────────────────────────────────────────────────────
-var AC = typeof AudioContext !== 'undefined' ? new AudioContext() : null;
+var AC=typeof AudioContext!=='undefined'?new AudioContext():null;
 function tone(f,d,t,v){
   t=t||'sine';v=v||0.35;
-  if(!AC)return; if(AC.state==='suspended')AC.resume();
+  if(!AC)return;if(AC.state==='suspended')AC.resume();
   var o=AC.createOscillator(),g=AC.createGain();
-  o.type=t; o.frequency.value=f;
+  o.type=t;o.frequency.value=f;
   g.gain.setValueAtTime(v,AC.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);
   o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);
 }
-function soundReset(){ tone(440,0.2); setTimeout(function(){tone(550,0.15);},80); }
+function soundWinner(){
+  var notes=[523,659,784,1047];
+  notes.forEach(function(f,i){ setTimeout(function(){tone(f,0.4,'sine',0.4);},i*110); });
+}
+function soundReset(){ tone(440,0.18); setTimeout(function(){tone(550,0.14);},90); }
 
+// ── Confetti ──────────────────────────────────────────────────
+function fireConfetti(){
+  if(typeof confetti==='undefined')return;
+  confetti({particleCount:150,spread:90,origin:{y:0.5},
+    colors:['#b60012','#9e8a5f','#ffffff','#ffd700']});
+  setTimeout(function(){
+    confetti({particleCount:80,spread:130,origin:{y:0.6},
+      colors:['#ffd700','#ff6060','#b60012']});
+  },300);
+}
+
+// ── Brand helpers ─────────────────────────────────────────────
+function applyBrand(brand){
+  if(!brand)return;
+  if(brand.color){
+    document.documentElement.style.setProperty('--brand',brand.color);
+    document.documentElement.style.setProperty('--buzzer-col',brand.color);
+    document.getElementById('live-color').value=brand.color;
+  }
+  if(brand.logoUrl){
+    var el=document.getElementById('admin-logo');
+    if(el) el.innerHTML='<img src="'+brand.logoUrl+'" alt="logo"/>';
+  }
+}
+
+function previewColor(val){
+  document.getElementById('color-preview').style.background=val;
+}
+
+function handleLogo(input){
+  var file=input.files[0];
+  if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    _pendingLogoUrl=e.target.result;
+    var prev=document.getElementById('logo-preview');
+    prev.src=e.target.result; prev.style.display='block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleLiveLogo(input){
+  var file=input.files[0];
+  if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    socket.emit('admin:set-brand',{roomCode:roomCode,logoUrl:e.target.result});
+  };
+  reader.readAsDataURL(file);
+}
+
+function sendBrand(){
+  var color=document.getElementById('live-color').value;
+  socket.emit('admin:set-brand',{roomCode:roomCode,color:color});
+}
+
+// ── Emit helper ───────────────────────────────────────────────
+function emit(ev){ socket.emit(ev,{roomCode:roomCode}); }
+
+// ── Status helpers ────────────────────────────────────────────
 function statusLabel(s){
   return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
 }
@@ -170,81 +319,132 @@ function statusClass(s){
   return {winner:'status-winner',ready:'status-ready','too-late':'status-too-late',offline:'status-offline',wrong:'status-wrong'}[s]||'';
 }
 
-function emit(ev){ socket.emit(ev,{ roomCode:roomCode }); }
-
-function showDashboard(code, name){
-  roomCode = code;
-  localStorage.setItem(LS_ADMIN_ROOM, code);
-  document.getElementById('a-room-code').textContent = code;
-  document.getElementById('a-game-name').textContent = name;
-  document.getElementById('view-setup').style.display = 'none';
-  document.getElementById('view-admin').style.display = 'flex';
+// ── Podium ────────────────────────────────────────────────────
+function renderPodium(players,elId){
+  var el=document.getElementById(elId);
+  if(!el)return;
+  var top=players.slice().sort(function(a,b){return b.score-a.score;}).slice(0,3);
+  if(!top.length||top[0].score===0){el.style.display='none';return;}
+  var order=[top[1],top[0],top[2]];
+  var classes=['p2','p1','p3'];
+  el.style.display='flex';
+  el.innerHTML=order.map(function(p,i){
+    if(!p)return '<div class="podium-slot '+classes[i]+'"></div>';
+    var rank=top.indexOf(p);
+    return '<div class="podium-slot '+classes[i]+'">'
+      +'<div class="podium-medal">'+MEDALS[rank]+'</div>'
+      +'<div class="podium-name">'+p.name+'</div>'
+      +'<div class="podium-score">'+p.score+'</div>'
+      +'</div>';
+  }).join('');
 }
 
-// ── On load: attempt silent rejoin ────────────────────────────
-window.addEventListener('load', function(){
-  var saved = localStorage.getItem(LS_ADMIN_ROOM);
-  if(saved) socket.emit('admin:rejoin',{ roomCode:saved });
+// ── Show dashboard ────────────────────────────────────────────
+function showDashboard(code, name){
+  roomCode=code;
+  localStorage.setItem(LS_ADMIN_ROOM,code);
+  document.getElementById('a-room-code').textContent=code;
+  document.getElementById('a-game-name').textContent=name;
+  document.getElementById('view-setup').style.display='none';
+  document.getElementById('view-admin').style.display='flex';
+}
+
+// ── On load ───────────────────────────────────────────────────
+window.addEventListener('load',function(){
+  var saved=localStorage.getItem(LS_ADMIN_ROOM);
+  if(saved) socket.emit('admin:rejoin',{roomCode:saved});
 });
 
 // ── Socket lifecycle ──────────────────────────────────────────
-socket.on('connect', function(){
-  bumpHeartbeat();
-  setReconnectBtn(false);
-  // Rejoin if we have a stored room
-  var room = roomCode || localStorage.getItem(LS_ADMIN_ROOM);
-  if(room) socket.emit('admin:rejoin',{ roomCode:room });
+socket.on('connect',function(){
+  bumpHeartbeat(); setRC(false);
+  var room=roomCode||localStorage.getItem(LS_ADMIN_ROOM);
+  if(room) socket.emit('admin:rejoin',{roomCode:room});
 });
-
-socket.on('disconnect', function(){
-  setReconnectBtn(true);
-});
-
-socket.on('connect_error', function(){
-  setReconnectBtn(true);
-});
+socket.on('disconnect',function(){ setRC(true); });
+socket.on('connect_error',function(){ setRC(true); });
 
 // ── Game events ───────────────────────────────────────────────
-socket.on('room:created', function(d){
+socket.on('room:created',function(d){
   bumpHeartbeat();
-  showDashboard(d.roomCode, d.gameName);
+  showDashboard(d.roomCode,d.gameName);
+  // If admin set brand before room was created, push it now
+  var color=document.getElementById('setup-color').value;
+  if(color!=='#b60012'||_pendingLogoUrl){
+    socket.emit('admin:set-brand',{
+      roomCode:d.roomCode,
+      color:color,
+      logoUrl:_pendingLogoUrl||undefined
+    });
+  }
 });
 
-socket.on('room:error', function(msg){
+socket.on('room:error',function(msg){
   bumpHeartbeat();
-  // Only wipe dashboard if we haven't entered it yet
   if(!roomCode){
     localStorage.removeItem(LS_ADMIN_ROOM);
-    document.getElementById('view-setup').style.display = 'flex';
-    document.getElementById('view-admin').style.display = 'none';
+    document.getElementById('view-setup').style.display='flex';
+    document.getElementById('view-admin').style.display='none';
   }
-  document.getElementById('setup-error').textContent = msg;
+  document.getElementById('setup-error').textContent=msg;
 });
 
-socket.on('game:state', function(state){
+socket.on('game:state',function(state){
   bumpHeartbeat();
-  window._lastFullState = state;   // cache for game:delta merging
+  window._lastFullState=state;
+  if(state.brand) applyBrand(state.brand);
   render(state);
 });
 
-socket.on('round:active-flash', function(){
+socket.on('round:winner',function(d){
+  bumpHeartbeat();
+  soundWinner();
+  fireConfetti();
+  document.getElementById('ov-winner-name').textContent=d.winnerName;
+  if(window._lastFullState) renderPodium(window._lastFullState.players,'ov-podium');
+  document.getElementById('winner-overlay').classList.add('show');
+  setTimeout(function(){
+    document.getElementById('winner-overlay').classList.remove('show');
+  },4000);
+});
+
+socket.on('round:active-flash',function(){
   bumpHeartbeat();
   soundReset();
 });
 
+socket.on('game:delta',function(delta){
+  bumpHeartbeat();
+  if(!window._lastFullState)return;
+  Object.assign(window._lastFullState,delta);
+  if(delta.brand) applyBrand(delta.brand);
+  render(window._lastFullState);
+});
+
+socket.on('game:tick',function(tick){
+  bumpHeartbeat();
+  document.getElementById('a-round').textContent=tick.round;
+  document.getElementById('a-countdown').textContent=tick.countdown;
+  if(window._lastFullState){
+    window._lastFullState.round=tick.round;
+    window._lastFullState.countdown=tick.countdown;
+    window._lastFullState.roundLocked=tick.locked;
+  }
+});
+
 // ── Render ────────────────────────────────────────────────────
 function render(state){
-  document.getElementById('a-round').textContent     = state.round;
-  document.getElementById('a-countdown').textContent = state.countdown!=null ? state.countdown : '-';
-  document.getElementById('event-feed').textContent  = state.lastEvent;
+  document.getElementById('a-round').textContent=state.round;
+  document.getElementById('a-countdown').textContent=state.countdown!=null?state.countdown:'-';
+  document.getElementById('event-feed').textContent=state.lastEvent;
 
-  var hasWinner = !!state.winnerId;
-  document.getElementById('btn-give-point').disabled = !hasWinner;
-  document.getElementById('btn-unlock').disabled     = !hasWinner;
+  var hasWinner=!!state.winnerId;
+  document.getElementById('btn-give-point').disabled=!hasWinner;
+  document.getElementById('btn-unlock').disabled=!hasWinner;
 
-  var tb = document.getElementById('a-players-tbody');
+  var tb=document.getElementById('a-players-tbody');
   if(state.players.length===0){
-    tb.innerHTML='<tr><td colspan="3" style="color:#aaa;text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>';
+    tb.innerHTML='<tr><td colspan="3" style="color:var(--text2);text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>';
   } else {
     tb.innerHTML=state.players.map(function(p){
       var blocked=(state.blockedIds||[]).indexOf(p.id)>-1;
@@ -259,45 +459,25 @@ function render(state){
   var sorted=[].concat(state.players).sort(function(a,b){
     return b.score-a.score||a.name.localeCompare(b.name);
   });
-  document.getElementById('a-leaderboard').innerHTML = sorted.length
+  document.getElementById('a-leaderboard').innerHTML=sorted.length
     ? sorted.map(function(p,i){
         return '<div class="lb-item"><span>'+(MEDALS[i]||'•')+' '+p.name+'</span><span>'+p.score+'</span></div>';
       }).join('')
-    : '<p style="color:#aaa;text-align:center">لا يوجد لاعبون بعد</p>';
+    : '<p style="color:var(--text2);text-align:center">لا يوجد لاعبون بعد</p>';
+
+  renderPodium(state.players,'a-podium');
 }
 
 // ── Create room ───────────────────────────────────────────────
 function createRoom(){
-  var name = document.getElementById('game-name').value.trim();
-  var code = document.getElementById('room-code').value.trim();
-  var err  = document.getElementById('setup-error');
+  var name=document.getElementById('game-name').value.trim();
+  var code=document.getElementById('room-code').value.trim();
+  var err=document.getElementById('setup-error');
   err.textContent='';
-  if(!name){ err.textContent='أدخل اسم اللعبة.'; return; }
-  if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام بالضبط.'; return; }
-  socket.emit('admin:create-room',{ gameName:name, roomCode:code });
+  if(!name){err.textContent='أدخل اسم اللعبة.';return;}
+  if(!/^\d{4}$/.test(code)){err.textContent='الرمز يجب أن يكون 4 أرقام بالضبط.';return;}
+  socket.emit('admin:create-room',{gameName:name,roomCode:code});
 }
-
-// ── game:delta — slim control-state update ────────────────────
-socket.on('game:delta', function(delta){
-  bumpHeartbeat();
-  // Build a minimal render-compatible object from the delta
-  // and the last known player list (admin always has full state)
-  if(!window._lastFullState) return;
-  Object.assign(window._lastFullState, delta);
-  render(window._lastFullState);
-});
-
-// ── game:tick — volatile countdown tick ───────────────────────
-socket.on('game:tick', function(tick){
-  bumpHeartbeat();
-  document.getElementById('a-round').textContent     = tick.round;
-  document.getElementById('a-countdown').textContent = tick.countdown;
-  if(window._lastFullState){
-    window._lastFullState.round      = tick.round;
-    window._lastFullState.countdown  = tick.countdown;
-    window._lastFullState.roundLocked= tick.locked;
-  }
-});
 </script>
 </body>
 </html>

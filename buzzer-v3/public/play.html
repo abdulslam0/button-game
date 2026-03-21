@@ -1,73 +1,167 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="light">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>من يضغط الزر أولاً — لاعب</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>من يضغط الزر أولاً — لاعب v8</title>
 <link rel="stylesheet" href="/shared.css"/>
 <style>
+/* ── Dark mode ── */
+[data-theme="dark"]{
+  --bg:#121212;--surface:rgba(30,30,30,.95);--text:#f0f0f0;
+  --text2:#aaa;--border:#333;--red:#e63950;
+}
+[data-theme="light"]{
+  --bg:#f7f5f0;--surface:rgba(255,255,255,.88);--text:#241c15;
+  --text2:#555;--border:#eee;--red:#b60012;
+}
+body{ background:var(--bg); color:var(--text); transition:background .3s,color .3s; }
+.card{ background:var(--surface); }
+th,td{ border-color:var(--border); color:var(--text); }
+
+/* ── Reconnect button ── */
 #btn-reconnect{
   display:none;position:fixed;bottom:1.25rem;left:1.25rem;z-index:9999;
-  background:#b60012;color:#fff;border:none;border-radius:2rem;
+  background:var(--red);color:#fff;border:none;border-radius:2rem;
   padding:.6rem 1.2rem;font-size:.95rem;font-weight:700;cursor:pointer;
-  box-shadow:0 4px 16px rgba(182,0,18,.5);font-family:'Tajawal',sans-serif;
-  direction:rtl;
+  box-shadow:0 4px 16px rgba(0,0,0,.35);font-family:'Tajawal',sans-serif;direction:rtl;
 }
-#btn-reconnect.vis{
-  display:block;
-  animation:rcpulse 2s ease-in-out infinite;
-}
+#btn-reconnect.vis{ display:block; animation:rcpulse 2s ease-in-out infinite; }
 @keyframes rcpulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+/* ── Dark mode toggle ── */
+#dark-toggle{
+  position:fixed;top:1rem;left:1rem;z-index:8888;
+  background:var(--surface);border:1.5px solid var(--border);border-radius:2rem;
+  padding:.4rem .85rem;font-size:.85rem;font-weight:700;cursor:pointer;
+  color:var(--text);font-family:'Tajawal',sans-serif;
+}
+
+/* ── Buzzer — color driven by CSS variable ── */
+#buzzer{
+  --bz-color: #b60012;  /* overridden by JS from server brand */
+  background: radial-gradient(circle at 38% 32%,
+    color-mix(in srgb, var(--bz-color) 60%, white),
+    var(--bz-color),
+    color-mix(in srgb, var(--bz-color) 40%, black)
+  );
+  box-shadow: 0 24px 30px rgba(0,0,0,.35),
+    inset 0 8px 20px rgba(255,255,255,.35),
+    inset 0 -12px 20px rgba(0,0,0,.4);
+}
+#buzzer.flash{
+  animation: flashRing .6s ease-out;
+}
+@keyframes flashRing{
+  0%,100%{ box-shadow:0 24px 30px rgba(0,0,0,.35),inset 0 8px 20px rgba(255,255,255,.35),inset 0 -12px 20px rgba(0,0,0,.4); }
+  50%{ box-shadow:0 0 60px #ffeb3b,0 24px 30px rgba(0,0,0,.35),inset 0 8px 20px rgba(255,255,255,.35),inset 0 -12px 20px rgba(0,0,0,.4); }
+}
+
+/* ── Lobby ── */
+#view-lobby .lobby-players{
+  display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.75rem;justify-content:center;
+}
+.lobby-chip{
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:2rem;padding:.35rem .85rem;font-size:.85rem;font-weight:700;color:var(--text);
+}
+.lobby-self{ border-color:var(--red);color:var(--red); }
+
+/* ── Winner overlay ── */
+#winner-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);
+  z-index:6000;flex-direction:column;align-items:center;justify-content:center;
+  gap:1rem;text-align:center;
+}
+#winner-overlay.show{ display:flex; }
+#winner-overlay h2{ font-size:2.5rem;font-weight:900;color:#ffd700;text-shadow:0 2px 12px rgba(0,0,0,.5); }
+#winner-overlay p{ font-size:1.1rem;color:#fff;font-weight:700; }
+#winner-overlay button{ background:#ffd700;color:#241c15;border:none;border-radius:1rem;padding:.65rem 1.5rem;font-size:1rem;font-weight:900;cursor:pointer;font-family:'Tajawal',sans-serif; }
+
+/* ── Podium ── */
+.podium-wrap{ display:flex;align-items:flex-end;justify-content:center;gap:.5rem;margin-bottom:.75rem;min-height:90px; }
+.podium-block{ display:flex;flex-direction:column;align-items:center;gap:.2rem;border-radius:.5rem .5rem 0 0;padding:.45rem .55rem .2rem;min-width:60px;background:var(--surface); }
+.podium-block.p1{ height:80px;background:linear-gradient(180deg,#f5d76e,#c8a800); }
+.podium-block.p2{ height:62px;background:linear-gradient(180deg,#ccc,#999); }
+.podium-block.p3{ height:48px;background:linear-gradient(180deg,#e09866,#a0622a); }
+.podium-name{ font-size:.68rem;font-weight:700;text-align:center;line-height:1.1;color:#241c15; }
+.podium-score{ font-size:.9rem;font-weight:900;color:#241c15; }
+.podium-medal{ font-size:1.1rem; }
+
+/* ── confetti canvas ── */
+#confetti-canvas{ position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5999; }
 </style>
 </head>
 <body>
 
+<canvas id="confetti-canvas"></canvas>
+<button id="dark-toggle" onclick="toggleDark()">🌙 وضع مظلم</button>
 <button id="btn-reconnect" onclick="manualReconnect()">⚡ إعادة اتصال</button>
 
-<!-- JOIN FORM -->
+<!-- Winner overlay -->
+<div id="winner-overlay">
+  <h2 id="wo-title">🎉</h2>
+  <p id="wo-sub"></p>
+  <button onclick="closeOverlay()">حسناً</button>
+</div>
+
+<!-- ══ JOIN FORM ══ -->
 <div id="view-join" style="display:flex;flex-direction:column;align-items:center;width:100%">
   <header>
     <div class="logo-circle"><div class="logo-inner"></div></div>
     <h1>من يضغط الزر أولاً</h1>
   </header>
   <div class="card">
-    <h2 style="font-size:1.1rem;font-weight:900;color:#241c15;margin-bottom:1rem">انضم إلى غرفة</h2>
-    <label style="font-size:.95rem;font-weight:700;display:block;margin-bottom:.1rem">اسمك</label>
+    <h2 style="font-size:1.1rem;font-weight:900;color:var(--text);margin-bottom:1rem">انضم إلى غرفة</h2>
+    <label style="font-size:.95rem;font-weight:700;display:block;margin-bottom:.1rem;color:var(--text)">اسمك</label>
     <input type="text" id="player-name" placeholder="اسمك هنا..." maxlength="30"/>
-    <label style="font-size:.95rem;font-weight:700;display:block;margin-top:.75rem;margin-bottom:.1rem">رمز الغرفة (4 أرقام)</label>
+    <label style="font-size:.95rem;font-weight:700;display:block;margin-top:.75rem;margin-bottom:.1rem;color:var(--text)">رمز الغرفة (4 أرقام)</label>
     <input type="number" id="join-code" placeholder="أدخل الرمز" min="0" max="9999"
-           oninput="this.value=this.value.slice(0,4)"
-           style="letter-spacing:.25em;font-weight:900"/>
+           oninput="this.value=this.value.slice(0,4)" style="letter-spacing:.25em;font-weight:900"/>
     <div class="form-error" id="join-error"></div>
     <button class="btn btn-red" style="margin-top:.75rem" onclick="joinGame()">دخول</button>
   </div>
 </div>
 
-<!-- PLAY VIEW -->
+<!-- ══ LOBBY ══ -->
+<div id="view-lobby" style="display:none;flex-direction:column;align-items:center;width:100%">
+  <header>
+    <img id="lp-logo" style="max-width:90px;max-height:70px;display:none;border-radius:.5rem;margin-bottom:.5rem"/>
+    <div class="logo-circle" id="lp-logo-circle"><div class="logo-inner"></div></div>
+    <h1 id="lp-game-name">في انتظار البدء…</h1>
+    <div class="room-badge">غرفة: <span class="room-code" id="lp-room-code">----</span></div>
+  </header>
+  <div class="card" style="max-width:440px;text-align:center">
+    <h2 style="font-size:1rem;font-weight:900;color:var(--text);margin-bottom:.5rem">
+      اللاعبون المتصلون: <span id="lp-count">0</span>
+    </h2>
+    <p style="font-size:.85rem;color:var(--text2);margin-bottom:.75rem">انتظر حتى يبدأ المدير اللعبة…</p>
+    <div class="lobby-players" id="lp-players"></div>
+  </div>
+</div>
+
+<!-- ══ PLAY VIEW ══ -->
 <div id="view-play" style="display:none;flex-direction:column;align-items:center;width:100%">
   <header>
-    <div class="logo-circle"><div class="logo-inner"></div></div>
+    <img id="p-logo" style="max-width:90px;max-height:70px;display:none;border-radius:.5rem;margin-bottom:.5rem"/>
+    <div class="logo-circle" id="p-logo-circle"><div class="logo-inner"></div></div>
     <h1 id="p-game-name">من يضغط الزر أولاً</h1>
     <div class="room-badge">غرفة: <span class="room-code" id="p-room-code">----</span></div>
   </header>
   <div class="stat-bar" style="max-width:480px;width:100%">
-    <div class="stat">اللاعب: <span id="p-name">-</span></div>
-    <div class="stat">النقاط: <span id="p-score">0</span></div>
-    <div class="stat">الجولة: <span id="p-round">1</span></div>
-    <div class="stat">العد: <span id="p-countdown">-</span></div>
+    <div class="stat" style="color:var(--text)">اللاعب: <span id="p-name">-</span></div>
+    <div class="stat" style="color:var(--text)">النقاط: <span id="p-score">0</span></div>
+    <div class="stat" style="color:var(--text)">الجولة: <span id="p-round">1</span></div>
+    <div class="stat" style="color:var(--text)">العد: <span id="p-countdown">-</span></div>
   </div>
   <div class="buzzer-wrap">
     <div id="countdown-badge"></div>
-    <!--
-      NO "disabled" attribute here.
-      JS owns the disabled state 100% via setBuzzer().
-      Starting enabled=false is set immediately by JS below.
-    -->
     <button id="buzzer" onclick="buzz()"></button>
-    <p id="player-msg">جاهز؟ انتظر بداية الجولة.</p>
+    <p id="player-msg" style="color:var(--red)">جاهز؟ انتظر بداية الجولة.</p>
   </div>
-  <div class="card" style="margin-top:1rem">
-    <h3 style="font-weight:700;margin-bottom:.5rem;font-size:1rem;color:#241c15">اللاعبون</h3>
+  <div class="card" style="margin-top:1rem;max-width:480px;width:100%">
+    <h3 style="font-weight:700;margin-bottom:.5rem;font-size:.95rem;color:var(--text)">Leaderboard</h3>
+    <div class="podium-wrap" id="p-podium"></div>
     <table>
       <thead><tr><th>الاسم</th><th>النقاط</th><th>الحالة</th></tr></thead>
       <tbody id="p-players-tbody"></tbody>
@@ -75,116 +169,139 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-// ─────────────────────────────────────────────────────────────
-// play.html — v6
-//
-// ROOT CAUSE FIX for "red button does nothing":
-//   The HTML had disabled="" on #buzzer. render() sets bz.disabled
-//   but only runs when myId is known. If game:state arrives before
-//   player:self (common after reconnect), myId is null → render()
-//   bails → buzzer stays disabled forever.
-//
-//   Fix: Remove disabled attribute from HTML. JS sets it immediately
-//   on page load. setBuzzer() is called in BOTH player:self AND
-//   game:state, so the button is always correct regardless of
-//   event arrival order.
-// ─────────────────────────────────────────────────────────────
+var LS_PID='buzzer_pid', LS_ROOM='buzzer_room', LS_NAME='buzzer_name', LS_THEME='buzzer_theme';
 
-var LS_PID  = 'buzzer_pid';
-var LS_ROOM = 'buzzer_room';
-var LS_NAME = 'buzzer_name';
+var socket=io({reconnectionDelay:1000,reconnectionDelayMax:5000});
+var myId=null, roomCode=null, iAmBuzzer=false, lastState=null;
+var MEDALS=['🥇','🥈','🥉'];
 
-var socket    = io({ reconnectionDelay:1000, reconnectionDelayMax:5000 });
-var myId      = null;
-var roomCode  = null;
-var iAmBuzzer = false;
-var lastState = null;   // cache so player:self can re-apply it immediately
+/* ── Dark mode ─────────────────────────────────────────────── */
+(function(){
+  var saved=localStorage.getItem(LS_THEME)||
+    (window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+  document.documentElement.setAttribute('data-theme',saved);
+  if(saved==='dark') document.getElementById('dark-toggle').textContent='☀️ وضع فاتح';
+})();
+function toggleDark(){
+  var cur=document.documentElement.getAttribute('data-theme');
+  var next=cur==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  localStorage.setItem(LS_THEME,next);
+  document.getElementById('dark-toggle').textContent=next==='dark'?'☀️ وضع فاتح':'🌙 وضع مظلم';
+}
 
-// Disable buzzer immediately on load (JS owns this, not HTML)
-document.getElementById('buzzer').disabled = true;
+/* ── Disable buzzer on load ────────────────────────────────── */
+document.getElementById('buzzer').disabled=true;
 
-// ── Heartbeat ────────────────────────────────────────────────
-var lastHeartbeat = Date.now();
-function bumpHeartbeat(){ lastHeartbeat = Date.now(); }
+/* ── Heartbeat ─────────────────────────────────────────────── */
+var lastHeartbeat=Date.now();
+function bumpHeartbeat(){lastHeartbeat=Date.now();}
 setInterval(function(){
-  if(Date.now() - lastHeartbeat > 15000){
-    console.log('[heartbeat] stale, forcing resync');
-    forceResync();
-  }
-}, 5000);
-
-// ── Resync helpers ────────────────────────────────────────────
+  if(Date.now()-lastHeartbeat>15000) forceResync();
+},5000);
 function emitResync(){
-  var pid  = myId  || localStorage.getItem(LS_PID);
-  var room = roomCode || localStorage.getItem(LS_ROOM);
-  var name = localStorage.getItem(LS_NAME);
-  if(pid && room){
-    socket.emit('client:resync',{ persistentId:pid, roomCode:room });
-  } else if(room && name){
-    socket.emit('player:join',{
-      name: name,
-      roomCode: room,
-      persistentId: localStorage.getItem(LS_PID)||undefined
-    });
-  }
+  var pid=myId||localStorage.getItem(LS_PID);
+  var room=roomCode||localStorage.getItem(LS_ROOM);
+  var name=localStorage.getItem(LS_NAME);
+  if(pid&&room) socket.emit('client:resync',{persistentId:pid,roomCode:room});
+  else if(room&&name) socket.emit('player:join',{name:name,roomCode:room,persistentId:localStorage.getItem(LS_PID)||undefined});
 }
-
 function forceResync(){
-  if(!socket.connected){ socket.connect(); }
-  else { emitResync(); }
+  if(!socket.connected) socket.connect(); else emitResync();
 }
 
-// ── Reconnect button ──────────────────────────────────────────
-var _rcBtn = document.getElementById('btn-reconnect');
-function setReconnectBtn(on){
-  if(on) _rcBtn.classList.add('vis');
-  else   _rcBtn.classList.remove('vis');
-}
-function manualReconnect(){
-  setReconnectBtn(false);
-  forceResync();
-}
-
-// ── Visibility radar ──────────────────────────────────────────
-document.addEventListener('visibilitychange', function(){
+/* ── Reconnect button ──────────────────────────────────────── */
+var _rcBtn=document.getElementById('btn-reconnect');
+function setReconnectBtn(on){ if(on) _rcBtn.classList.add('vis'); else _rcBtn.classList.remove('vis'); }
+function manualReconnect(){ setReconnectBtn(false); forceResync(); }
+document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'){
-    if(!socket.connected) socket.connect();
-    else emitResync();
+    if(!socket.connected) socket.connect(); else emitResync();
   }
 });
 
-// ── Sounds ────────────────────────────────────────────────────
-var AC = typeof AudioContext!=='undefined' ? new AudioContext() : null;
+/* ── Sound engine ──────────────────────────────────────────── */
+var AC=typeof AudioContext!=='undefined'?new AudioContext():null;
 function tone(f,d,t,v){
-  t=t||'sine'; v=v||0.35;
-  if(!AC) return;
-  if(AC.state==='suspended') AC.resume();
-  var o=AC.createOscillator(), g=AC.createGain();
-  o.type=t; o.frequency.value=f;
-  g.gain.setValueAtTime(v, AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+d);
-  o.connect(g); g.connect(AC.destination);
-  o.start(); o.stop(AC.currentTime+d);
+  t=t||'sine';v=v||0.35;
+  if(!AC)return; if(AC.state==='suspended')AC.resume();
+  var o=AC.createOscillator(),g=AC.createGain();
+  o.type=t;o.frequency.value=f;
+  g.gain.setValueAtTime(v,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);
+  o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);
 }
-function soundPress()  { tone(320,0.12,'square',0.4); }
-function soundWinner() {
-  [523,659,784].forEach(function(f,i){
-    setTimeout(function(){ tone(f,0.3,'sine',0.45); }, i*140);
+function soundPress(){ tone(320,0.12,'square',0.4); }    // Buzzer press
+function soundVictoryBell(){                              // Winner bell
+  [[523,.4],[659,.4],[784,.4],[1047,.6]].forEach(function(x,i){
+    setTimeout(function(){tone(x[0],x[1],'sine',0.5);},i*180);
   });
 }
-function soundReset()  { tone(440,0.2); setTimeout(function(){tone(550,0.15);},80); }
+function soundTooLate(){                                  // Muted buzz for late press
+  tone(180,0.3,'sawtooth',0.25);
+  setTimeout(function(){tone(160,0.2,'sawtooth',0.15);},150);
+}
+function soundReset(){                                    // Round start chime
+  tone(440,0.2); setTimeout(function(){tone(550,0.15);},80);
+}
+function soundTick(){                                     // Countdown tick
+  tone(800,0.06,'sine',0.18);
+}
 
-// ── Status helpers ────────────────────────────────────────────
+/* ── Haptic ────────────────────────────────────────────────── */
+function haptic(pattern){
+  if(navigator.vibrate) navigator.vibrate(pattern||50);
+}
+
+/* ── Confetti ──────────────────────────────────────────────── */
+function fireConfetti(){
+  if(typeof confetti==='undefined') return;
+  confetti({particleCount:160,spread:90,origin:{y:0.6}});
+  setTimeout(function(){
+    confetti({particleCount:80,angle:60,spread:55,origin:{x:0}});
+    confetti({particleCount:80,angle:120,spread:55,origin:{x:1}});
+  },400);
+}
+
+/* ── Status helpers ────────────────────────────────────────── */
 function statusLabel(s){
-  return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',
-          offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
+  return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
 }
 function statusClass(s){
-  return {winner:'status-winner',ready:'status-ready',
-          'too-late':'status-too-late',offline:'status-offline',
-          wrong:'status-wrong'}[s]||'';
+  return {winner:'status-winner',ready:'status-ready','too-late':'status-too-late',offline:'status-offline',wrong:'status-wrong'}[s]||'';
+}
+
+/* ── setBuzzer — single source of truth ────────────────────── */
+function setBuzzer(state,me){
+  var bz=document.getElementById('buzzer');
+  if(!bz) return;
+  if(!me||!state){ bz.disabled=true; return; }
+  var isBlocked=(state.blockedIds||[]).indexOf(me.id)>-1;
+  bz.disabled=!!(state.gameLocked||state.roundLocked||me.hasPressed||isBlocked||state.inLobby);
+}
+
+/* ── Brand application ─────────────────────────────────────── */
+function applyBrand(state){
+  // Buzzer color
+  var bz=document.getElementById('buzzer');
+  if(bz&&state.buzzerColor) bz.style.setProperty('--bz-color',state.buzzerColor);
+  // Logo
+  var logo=state.logoUrl||'';
+  ['p-logo','lp-logo'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(!el) return;
+    if(logo){ el.src=logo; el.style.display='block'; }
+    else     { el.style.display='none'; }
+  });
+  ['p-logo-circle','lp-logo-circle'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(!el) return;
+    if(logo){ el.style.backgroundImage='url('+logo+')'; el.style.backgroundSize='cover'; }
+    else     { el.style.backgroundImage=''; }
+  });
 }
 
 function setMsg(m){
@@ -194,155 +311,182 @@ function setMsg(m){
   setTimeout(function(){ el.textContent=m; el.style.opacity='1'; },150);
 }
 
-// ── THE KEY FIX — setBuzzer() is the single source of truth ──
-// Called every time player:self OR game:state arrives, in both cases.
-function setBuzzer(state, me){
-  var bz=document.getElementById('buzzer');
-  if(!bz) return;
-  if(!me || !state){
-    bz.disabled=true;
-    return;
+/* ── Winner overlay ────────────────────────────────────────── */
+function showWinnerOverlay(isMe, winnerName){
+  var ov=document.getElementById('winner-overlay');
+  document.getElementById('wo-title').textContent=isMe?'🎉 أنت الفائز!':'🏆 '+winnerName+' فاز!';
+  document.getElementById('wo-sub').textContent=isMe?'أحسنت! أجب الآن.':'انتظر الجولة القادمة.';
+  ov.classList.add('show');
+  setTimeout(function(){ ov.classList.remove('show'); },4000);
+}
+function closeOverlay(){
+  document.getElementById('winner-overlay').classList.remove('show');
+}
+
+/* ── Podium ────────────────────────────────────────────────── */
+function renderPodium(elId, players){
+  var el=document.getElementById(elId);
+  if(!el) return;
+  var top=players.slice(0,3);
+  var order=[1,0,2];
+  var classes=['p2','p1','p3'];
+  el.innerHTML=order.map(function(i){
+    var p=top[i];
+    if(!p) return '';
+    var isMe=myId&&p.id===myId;
+    return '<div class="podium-block '+classes[order.indexOf(i)]+'">'
+      +'<span class="podium-medal">'+MEDALS[i]+'</span>'
+      +'<span class="podium-name">'+(isMe?'⭐ ':'')+p.name+'</span>'
+      +'<span class="podium-score">'+p.score+'</span>'
+      +'</div>';
+  }).join('');
+}
+
+/* ── Show correct view ─────────────────────────────────────── */
+function showView(state){
+  document.getElementById('view-join').style.display='none';
+  document.getElementById('view-lobby').style.display='none';
+  document.getElementById('view-play').style.display='none';
+
+  applyBrand(state);
+
+  if(state.inLobby){
+    document.getElementById('view-lobby').style.display='flex';
+    document.getElementById('lp-game-name').textContent=state.gameName||'في انتظار البدء…';
+    document.getElementById('lp-room-code').textContent=state.roomCode||roomCode||'----';
+    var online=state.players.filter(function(p){return p.status!=='offline';});
+    document.getElementById('lp-count').textContent=online.length;
+    document.getElementById('lp-players').innerHTML=online.map(function(p){
+      return '<span class="lobby-chip'+(p.id===myId?' lobby-self':'')+'">'+p.name+'</span>';
+    }).join('');
+  } else {
+    document.getElementById('view-play').style.display='flex';
+    if(state.gameName) document.getElementById('p-game-name').textContent=state.gameName;
+    document.getElementById('p-round').textContent=state.round;
+    document.getElementById('p-countdown').textContent=
+      (state.roundLocked&&!state.winnerId)?state.countdown:'-';
+    var cb=document.getElementById('countdown-badge');
+    if(cb) cb.textContent=(!state.winnerId&&state.roundLocked&&!state.gameLocked&&state.countdown>0)?state.countdown:'';
+
+    if(!myId) return;
+    var me=state.players.find(function(p){return p.id===myId;});
+    if(!me) return;
+    document.getElementById('p-score').textContent=me.score;
+    setBuzzer(state,me);
+    var isBlocked=(state.blockedIds||[]).indexOf(myId)>-1;
+    if(isBlocked&&me.status==='wrong') setMsg('❌ إجابة خاطئة — أنت خارج هذه الجولة');
+    if(me.status==='winner'&&iAmBuzzer) setMsg('🎉 أنت الأول! أجب الآن');
+
+    var sorted=[].concat(state.players).sort(function(a,b){return b.score-a.score||a.name.localeCompare(b.name);});
+    renderPodium('p-podium',sorted);
+    renderTable(state);
   }
-  var isBlocked=(state.blockedIds||[]).indexOf(me.id)>-1;
-  bz.disabled = !!(state.gameLocked || state.roundLocked || me.hasPressed || isBlocked);
 }
 
-// ── Show play view ────────────────────────────────────────────
-function showPlayView(name, code){
-  document.getElementById('p-name').textContent       = name;
-  document.getElementById('p-room-code').textContent  = code;
-  document.getElementById('view-join').style.display  = 'none';
-  document.getElementById('view-play').style.display  = 'flex';
+function renderTable(state){
+  var tb=document.getElementById('p-players-tbody');
+  if(!tb) return;
+  tb.innerHTML=state.players.map(function(p){
+    return '<tr>'
+      +'<td style="font-weight:700;color:var(--text)">'+p.name+(p.id===myId?' (أنت)':'')+'</td>'
+      +'<td style="color:var(--text)">'+p.score+'</td>'
+      +'<td class="'+statusClass(p.status)+'">'+statusLabel(p.status)+'</td>'
+      +'</tr>';
+  }).join('');
 }
 
-// ── On load — attempt silent resync ──────────────────────────
-window.addEventListener('load', function(){
-  var pid  = localStorage.getItem(LS_PID);
-  var room = localStorage.getItem(LS_ROOM);
-  var name = localStorage.getItem(LS_NAME);
-  if(pid && room){
-    document.getElementById('player-name').value = name||'';
-    document.getElementById('join-code').value   = room;
-    socket.emit('client:resync',{ persistentId:pid, roomCode:room });
+/* ── On load ───────────────────────────────────────────────── */
+window.addEventListener('load',function(){
+  var pid=localStorage.getItem(LS_PID);
+  var room=localStorage.getItem(LS_ROOM);
+  var name=localStorage.getItem(LS_NAME);
+  if(pid&&room){
+    document.getElementById('player-name').value=name||'';
+    document.getElementById('join-code').value=room;
+    socket.emit('client:resync',{persistentId:pid,roomCode:room});
   }
 });
 
-// ── Manual join ───────────────────────────────────────────────
+/* ── Join ───────────────────────────────────────────────────── */
 function joinGame(){
   var name=document.getElementById('player-name').value.trim().slice(0,30);
   var code=document.getElementById('join-code').value.trim();
-  var err =document.getElementById('join-error');
+  var err=document.getElementById('join-error');
   err.textContent='';
   if(!name){ err.textContent='أدخل اسمك.'; return; }
   if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام.'; return; }
   var pid=localStorage.getItem(LS_PID)||undefined;
-  socket.emit('player:join',{ name:name, roomCode:code, persistentId:pid });
+  socket.emit('player:join',{name:name,roomCode:code,persistentId:pid});
 }
 
-// ── Buzz ──────────────────────────────────────────────────────
+/* ── Buzz ────────────────────────────────────────────────────── */
 function buzz(){
   soundPress();
-  socket.emit('player:buzz',{ roomCode:roomCode, sentAt:Date.now() });
+  haptic(50);                    // 50ms vibration on press
+  socket.emit('player:buzz',{roomCode:roomCode,sentAt:Date.now()});
 }
 
-// ── Socket lifecycle ──────────────────────────────────────────
-socket.on('connect', function(){
-  bumpHeartbeat();
-  setReconnectBtn(false);
-  if(myId && roomCode){
-    socket.emit('client:resync',{ persistentId:myId, roomCode:roomCode });
-  } else {
-    var pid =localStorage.getItem(LS_PID);
-    var room=localStorage.getItem(LS_ROOM);
-    if(pid && room) socket.emit('client:resync',{ persistentId:pid, roomCode:room });
-  }
+/* ── Socket lifecycle ──────────────────────────────────────── */
+socket.on('connect',function(){
+  bumpHeartbeat(); setReconnectBtn(false);
+  var pid=myId||localStorage.getItem(LS_PID);
+  var room=roomCode||localStorage.getItem(LS_ROOM);
+  if(pid&&room) socket.emit('client:resync',{persistentId:pid,roomCode:room});
 });
+socket.on('disconnect',function(){ setReconnectBtn(true); });
+socket.on('connect_error',function(){ setReconnectBtn(true); });
 
-socket.on('disconnect',    function(){ setReconnectBtn(true);  });
-socket.on('connect_error', function(){ setReconnectBtn(true);  });
-
-// ── player:self ───────────────────────────────────────────────
-// Fires on first join AND every resync.
-socket.on('player:self', function(player){
+/* ── player:self ─────────────────────────────────────────────── */
+socket.on('player:self',function(player){
   bumpHeartbeat();
-  myId     = player.id;
-  roomCode = localStorage.getItem(LS_ROOM) ||
-             document.getElementById('join-code').value.trim();
-  localStorage.setItem(LS_PID,  player.id);
-  localStorage.setItem(LS_ROOM, roomCode);
-  localStorage.setItem(LS_NAME, player.name);
-  showPlayView(player.name, roomCode);
-
-  // If we already have a cached state (arrived before player:self),
-  // apply buzzer state immediately — don't wait for next game:state.
+  myId=player.id;
+  roomCode=localStorage.getItem(LS_ROOM)||document.getElementById('join-code').value.trim();
+  localStorage.setItem(LS_PID,player.id);
+  localStorage.setItem(LS_ROOM,roomCode);
+  localStorage.setItem(LS_NAME,player.name);
+  document.getElementById('p-name').textContent=player.name;
+  document.getElementById('p-room-code').textContent=roomCode;
+  // Show lobby or play depending on state
   if(lastState){
-    var me=lastState.players.find(function(p){ return p.id===myId; });
-    setBuzzer(lastState, me||null);
-    renderTable(lastState);
+    var me=lastState.players.find(function(p){return p.id===myId;});
+    setBuzzer(lastState,me||null);
+    showView(lastState);
   }
 });
 
-// ── room:error ────────────────────────────────────────────────
-socket.on('room:error', function(msg){
+socket.on('room:error',function(msg){
   bumpHeartbeat();
   var el=document.getElementById('join-error');
   if(el) el.textContent=msg;
 });
 
-// ── game:state ────────────────────────────────────────────────
-socket.on('game:state', function(state){
+/* ── game:state ──────────────────────────────────────────────── */
+socket.on('game:state',function(state){
   bumpHeartbeat();
-  lastState=state;   // always cache
-
-  if(state.gameName)
-    document.getElementById('p-game-name').textContent=state.gameName;
-  if(!roomCode && state.roomCode)
-    roomCode=state.roomCode;
-
-  // Update stat bar whether or not we know myId yet
-  document.getElementById('p-round').textContent=state.round;
-  document.getElementById('p-countdown').textContent=
-    (state.roundLocked && !state.winnerId) ? state.countdown : '-';
-
-  var cb=document.getElementById('countdown-badge');
-  if(cb) cb.textContent=
-    (!state.winnerId&&state.roundLocked&&!state.gameLocked&&state.countdown>0)
-      ? state.countdown : '';
-
-  if(!myId) return;   // can't do player-specific work yet
-
-  var me=state.players.find(function(p){ return p.id===myId; });
-  if(!me) return;
-
-  document.getElementById('p-score').textContent=me.score;
-
-  // ← THE FIX: call setBuzzer here, not inline bz.disabled=...
-  setBuzzer(state, me);
-
-  var isBlocked=(state.blockedIds||[]).indexOf(myId)>-1;
-  if(isBlocked && me.status==='wrong')
-    setMsg('❌ إجابة خاطئة — أنت خارج هذه الجولة');
-  if(me.status==='winner' && iAmBuzzer)
-    setMsg('🎉 أنت الأول! أجب الآن');
-
-  renderTable(state);
+  lastState=state;
+  if(!roomCode&&state.roomCode) roomCode=state.roomCode;
+  if(myId) showView(state);
 });
 
-// ── round:winner ─────────────────────────────────────────────
-socket.on('round:winner', function(d){
+/* ── round:winner ────────────────────────────────────────────── */
+socket.on('round:winner',function(d){
   bumpHeartbeat();
-  if(d.winnerId===myId){
-    setMsg('🎉 أنت الأول! أجب الآن');
-    soundWinner();
+  var isMe=d.winnerId===myId;
+  if(isMe){
+    soundVictoryBell();
+    haptic([50,50,100,50,200]);  // celebratory vibration pattern
+    fireConfetti();
     iAmBuzzer=true;
   } else {
-    setMsg('⛔ '+d.winnerName+' ضغط أولاً!');
+    soundTooLate();
     iAmBuzzer=false;
   }
+  showWinnerOverlay(isMe,d.winnerName);
+  setMsg(isMe?'🎉 أنت الأول! أجب الآن':'⛔ '+d.winnerName+' ضغط أولاً!');
 });
 
-// ── round:active-flash ────────────────────────────────────────
-socket.on('round:active-flash', function(){
+/* ── round:active-flash ──────────────────────────────────────── */
+socket.on('round:active-flash',function(){
   bumpHeartbeat();
   soundReset();
   iAmBuzzer=false;
@@ -351,55 +495,41 @@ socket.on('round:active-flash', function(){
   setMsg('الجولة بدأت! اضغط الآن');
 });
 
-// ── Render helpers ────────────────────────────────────────────
-function renderTable(state){
-  var tb=document.getElementById('p-players-tbody');
-  if(!tb) return;
-  tb.innerHTML=state.players.map(function(p){
-    return '<tr>'
-      +'<td style="font-weight:700">'+p.name+(p.id===myId?' (أنت)':'')+'</td>'
-      +'<td>'+p.score+'</td>'
-      +'<td class="'+statusClass(p.status)+'">'+statusLabel(p.status)+'</td>'
-      +'</tr>';
-  }).join('');
-}
-
-// ── game:delta — slim control-state update (no player list) ──
-// Server sends this for events that don't change player scores/list.
-// We merge it into lastState so subsequent renders stay correct.
-socket.on('game:delta', function(delta){
+/* ── game:delta ──────────────────────────────────────────────── */
+socket.on('game:delta',function(delta){
   bumpHeartbeat();
   if(!lastState) return;
-  // Merge delta fields into cached state
-  Object.assign(lastState, delta);
-  // Update countdown / round display
+  Object.assign(lastState,delta);
   document.getElementById('p-round').textContent=lastState.round;
   document.getElementById('p-countdown').textContent=
-    (lastState.roundLocked && !lastState.winnerId) ? lastState.countdown : '-';
+    (lastState.roundLocked&&!lastState.winnerId)?lastState.countdown:'-';
   var cb=document.getElementById('countdown-badge');
   if(cb) cb.textContent=
     (!lastState.winnerId&&lastState.roundLocked&&!lastState.gameLocked&&lastState.countdown>0)
-      ? lastState.countdown : '';
-  if(!myId) return;
-  var me=lastState.players.find(function(p){ return p.id===myId; });
-  if(me){ setBuzzer(lastState, me); }
+      ?lastState.countdown:'';
+  if(myId){
+    var me=lastState.players.find(function(p){return p.id===myId;});
+    if(me) setBuzzer(lastState,me);
+  }
+  // Switch lobby→play if game just started
+  if(!lastState.inLobby&&document.getElementById('view-lobby').style.display!=='none'){
+    showView(lastState);
+  }
 });
 
-// ── game:tick — volatile countdown tick (may arrive out of order) ──
-// Only updates the countdown numbers; never re-renders player list.
-socket.on('game:tick', function(tick){
+/* ── game:tick ───────────────────────────────────────────────── */
+socket.on('game:tick',function(tick){
   bumpHeartbeat();
-  // Merge tick into lastState
+  soundTick();   // audible countdown tick synced with server
   if(lastState){
-    lastState.round      = tick.round;
-    lastState.countdown  = tick.countdown;
-    lastState.roundLocked= tick.locked;
+    lastState.round=tick.round;
+    lastState.countdown=tick.countdown;
+    lastState.roundLocked=tick.locked;
   }
   document.getElementById('p-round').textContent=tick.round;
-  document.getElementById('p-countdown').textContent=
-    (tick.locked) ? tick.countdown : '-';
+  document.getElementById('p-countdown').textContent=tick.locked?tick.countdown:'-';
   var cb=document.getElementById('countdown-badge');
-  if(cb) cb.textContent=(tick.locked && tick.countdown>0) ? tick.countdown : '';
+  if(cb) cb.textContent=(tick.locked&&tick.countdown>0)?tick.countdown:'';
 });
 </script>
 </body>
