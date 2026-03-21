@@ -1,14 +1,30 @@
 /**
- * server/index.js — v8  (FIXED)
+ * server/index.js — v9
  *
- * Critical fixes applied:
- *   1. app.use(express.static) was missing → "Cannot GET /" on Render
- *   2. brand event name mismatch: clients send 'admin:set-brand',
- *      old server listened for 'admin:update-brand' → ignored
- *   3. brand fields unified under room.brand = { color, logoUrl }
- *      so serialiseRoom / deltaState include them consistently
- *   4. inLobby moved to room.inLobby (was already there, kept as-is)
- *   5. health-check route added for Render
+ * Changes from v8-fixed:
+ *
+ * QUEUE SYSTEM
+ *   room.queue = Map<pid, player>
+ *   Players always land in queue first (inLobby OR mid-game).
+ *   Active players live in state.players as before.
+ *   Admin admits queue:
+ *     admin:admit-all  → move every queued player into active game
+ *   serialiseRoom / deltaState include:
+ *     queue: [ { id, name } ]   (lightweight, no scores)
+ *     queueCount: number
+ *
+ * LOBBY SIMPLIFICATION
+ *   room.inLobby is now ONLY about the pre-game lobby phase.
+ *   Once admin calls admin:start-game, inLobby=false and the game starts.
+ *   Mid-game joiners land in queue automatically regardless of inLobby.
+ *
+ * DARK MODE / TOGGLE REMOVED FROM SERVER
+ *   No server changes needed — it's purely client-side.
+ *
+ * V7 SYNC LOGIC FULLY PRESERVED
+ *   broadcastFull / broadcastDelta / broadcastTick / resolveBuzzQueue
+ *   all unchanged.  game:delta and game:tick carry queueCount so
+ *   admin UI badge updates without a full broadcast.
  */
 
 const express    = require('express');
@@ -32,11 +48,8 @@ const CLOCK_DRIFT_MAX = 5000;
 
 const rooms = new Map();
 
-// ── [FIX 1] Serve static files from /public ──────────────────
-// This was missing entirely — caused "Cannot GET /" on Render.
+// ── Static files + health ─────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
-
-// Health check for Render / UptimeRobot
 app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size }));
 
 // ─────────────────────────────────────────────────────────────
@@ -50,16 +63,21 @@ function playerView(p) {
   return { id: p.id, name: p.name, score: p.score, status: p.status, hasPressed: p.hasPressed };
 }
 
-// [FIX 3] brand is now a sub-object on room: room.brand = { color, logoUrl }
+function queueView(room) {
+  // Lightweight queue snapshot — only id + name
+  return [...room.queue.values()].map(p => ({ id: p.id, name: p.name }));
+}
+
 function serialiseRoom(room) {
   const { state } = room;
   const players = [...state.players.values()].map(playerView)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const queue = queueView(room);
   return {
     gameName   : room.gameName,
     roomCode   : room.roomCode,
     inLobby    : room.inLobby,
-    brand      : room.brand,             // { color, logoUrl }
+    brand      : room.brand,
     gameLocked : state.gameLocked,
     roundLocked: state.roundLocked,
     round      : state.round,
@@ -69,11 +87,14 @@ function serialiseRoom(room) {
     lastEvent  : state.lastEvent,
     blockedIds : state.blockedIds,
     players,
+    queue,
+    queueCount : queue.length,
   };
 }
 
 function deltaState(room) {
   const { state } = room;
+  const queue = queueView(room);
   return {
     inLobby    : room.inLobby,
     brand      : room.brand,
@@ -85,6 +106,8 @@ function deltaState(room) {
     winnerName : state.winnerName,
     lastEvent  : state.lastEvent,
     blockedIds : state.blockedIds,
+    queue,
+    queueCount : queue.length,
   };
 }
 
@@ -101,9 +124,10 @@ function broadcastTick(code) {
   if (!room) return;
   const { state } = room;
   io.to(code).volatile.emit('game:tick', {
-    round    : state.round,
-    countdown: state.countdown,
-    locked   : state.roundLocked,
+    round     : state.round,
+    countdown : state.countdown,
+    locked    : state.roundLocked,
+    queueCount: room.queue.size,
   });
 }
 function unicastState(socket, code) {
@@ -116,25 +140,25 @@ function unicastState(socket, code) {
 // ─────────────────────────────────────────────────────────────
 function defaultState() {
   return {
-    gameLocked  : false,
-    roundLocked : true,
-    round       : 1,
-    countdown   : COUNTDOWN_SECS,
-    winnerId    : null,
-    winnerName  : null,
-    lastEvent   : 'في انتظار بداية اللعبة من المدير.',
-    blockedIds  : [],
-    players     : new Map(),
-    _cTimer     : null,
+    gameLocked   : false,
+    roundLocked  : true,
+    round        : 1,
+    countdown    : COUNTDOWN_SECS,
+    winnerId     : null,
+    winnerName   : null,
+    lastEvent    : 'في انتظار بداية اللعبة من المدير.',
+    blockedIds   : [],
+    players      : new Map(),
+    _cTimer      : null,
     _firstPressAt: null,
-    _buzzQueue  : [],
-    _buzzTimer  : null,
-    _lockOwner  : null,
+    _buzzQueue   : [],
+    _buzzTimer   : null,
+    _lockOwner   : null,
   };
 }
 
 // ─────────────────────────────────────────────────────────────
-// Round helpers
+// Round helpers  (V7 logic unchanged)
 // ─────────────────────────────────────────────────────────────
 function clearTimers(state) {
   clearInterval(state._cTimer);
@@ -210,13 +234,32 @@ function resolveBuzzQueue(code) {
   }
   state.lastEvent  = `${winPlayer.name} ضغط أولاً!`;
   state._buzzQueue = [];
-
   io.to(code).volatile.emit('round:winner', {
     winnerId  : winner.pid,
     winnerName: winPlayer.name,
     sentAt    : winner.sentAt,
   });
   broadcastFull(code);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Queue helper — move all queued players into active game
+// ─────────────────────────────────────────────────────────────
+function admitQueue(room) {
+  if (!room.queue.size) return 0;
+  let count = 0;
+  for (const [pid, player] of room.queue.entries()) {
+    player.status     = 'ready';
+    player.hasPressed = false;
+    room.state.players.set(pid, player);
+    // Notify that specific player they are now active
+    const sock = [...io.sockets.sockets.values()]
+      .find(s => s.data.persistentId === pid && s.data.roomCode === room.roomCode);
+    if (sock) sock.emit('player:admitted');
+    count++;
+  }
+  room.queue.clear();
+  return count;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -237,7 +280,8 @@ io.on('connection', (socket) => {
       gameName      : name,
       inLobby       : true,
       adminSocketId : socket.id,
-      brand         : { color: '#b60012', logoUrl: '' },  // [FIX 3]
+      brand         : { color: '#c0392b', logoUrl: '' },
+      queue         : new Map(),   // ← waiting players (pre-game or mid-game)
       state         : defaultState(),
     };
     rooms.set(code, room);
@@ -249,7 +293,7 @@ io.on('connection', (socket) => {
     console.log(`[room created] ${code} "${name}"`);
   });
 
-  // 2. Admin rejoin after refresh
+  // 2. Admin rejoin
   socket.on('admin:rejoin', ({ roomCode }) => {
     const code = String(roomCode || '').trim();
     const room = rooms.get(code);
@@ -263,57 +307,89 @@ io.on('connection', (socket) => {
     console.log(`[admin rejoined] room ${code}`);
   });
 
-  // 3. Admin starts game (exits lobby)
+  // 3. Admin starts game from lobby (admits everyone in queue first)
   socket.on('admin:start-game', ({ roomCode: rc }) => {
     const code = rc || socket.data.roomCode;
     const room = rooms.get(code);
     if (!room) return;
+    admitQueue(room);          // move all queued players in before starting
     room.inLobby = false;
     room.state.lastEvent = 'اللعبة بدأت!';
     startCountdown(code);
   });
 
-  // 4. [FIX 2] Brand update — clients send 'admin:set-brand'
+  // 4. Admin admits all queued players (mid-game or lobby)
+  socket.on('admin:admit-all', ({ roomCode: rc }) => {
+    const code = rc || socket.data.roomCode;
+    const room = rooms.get(code);
+    if (!room) return;
+    const admitted = admitQueue(room);
+    if (admitted === 0) return;
+    room.state.lastEvent = `✅ تم قبول ${admitted} لاعب جديد في اللعبة.`;
+    broadcastFull(code);   // player list changed
+    console.log(`[admit-all] ${admitted} players admitted to room ${code}`);
+  });
+
+  // 5. Brand settings
   socket.on('admin:set-brand', ({ roomCode: rc, color, logoUrl }) => {
     const code = rc || socket.data.roomCode;
     const room = rooms.get(code);
     if (!room) return;
-    if (color)              room.brand.color   = String(color).slice(0, 20);
+    if (color)                 room.brand.color   = String(color).slice(0, 20);
     if (logoUrl !== undefined) room.brand.logoUrl = String(logoUrl).slice(0, 200000);
-    broadcastDelta(code);   // lightweight — only brand + control fields
+    broadcastDelta(code);
   });
 
-  // 5. Player resync
+  // 6. Player resync (returning player — bypass queue if already in state.players)
   socket.on('client:resync', ({ persistentId, roomCode }) => {
     const code = String(roomCode     || '').trim();
     const pid  = String(persistentId || '').trim();
     const room = rooms.get(code);
     if (!room || !pid) return;
-    const player = room.state.players.get(pid);
-    if (!player) return;
-    if (player.status === 'offline') player.status = 'ready';
-    socket.join(code);
-    socket.data.roomCode     = code;
-    socket.data.persistentId = pid;
-    socket.data.isAdmin      = false;
-    socket.emit('player:self', playerView(player));
-    unicastState(socket, code);
-    room.state.lastEvent = `${player.name} عاد إلى اللعبة.`;
-    broadcastDelta(code);
-    console.log(`[player resynced] ${player.name} → room ${code}`);
+
+    // Check active players first
+    let player = room.state.players.get(pid);
+    if (player) {
+      if (player.status === 'offline') player.status = 'ready';
+      socket.join(code);
+      socket.data.roomCode     = code;
+      socket.data.persistentId = pid;
+      socket.data.isAdmin      = false;
+      socket.emit('player:self', playerView(player));
+      unicastState(socket, code);
+      room.state.lastEvent = `${player.name} عاد إلى اللعبة.`;
+      broadcastDelta(code);
+      return;
+    }
+
+    // Check queue
+    player = room.queue.get(pid);
+    if (player) {
+      socket.join(code);
+      socket.data.roomCode     = code;
+      socket.data.persistentId = pid;
+      socket.data.isAdmin      = false;
+      socket.emit('player:self', playerView(player));
+      socket.emit('player:queued', { queueCount: room.queue.size });
+      unicastState(socket, code);
+      return;
+    }
+    // Unknown id — fall through (client will show join form)
   });
 
-  // 6. Player join
+  // 7. Player join
   socket.on('player:join', ({ name, roomCode, persistentId }) => {
     const code     = String(roomCode     || '').trim();
     const trimName = String(name         || '').trim().slice(0, 30);
     const pid      = String(persistentId || '').trim();
+
     if (!trimName)             return socket.emit('room:error', 'أدخل اسمك.');
     if (!/^\d{4}$/.test(code)) return socket.emit('room:error', 'الرمز يجب أن يكون 4 أرقام.');
     const room = rooms.get(code);
     if (!room)                 return socket.emit('room:error', `لا توجد غرفة بالرمز ${code}.`);
     if (room.state.gameLocked) return socket.emit('room:error', 'اللعبة منتهية.');
 
+    // Returning active player
     if (pid && room.state.players.has(pid)) {
       const ex = room.state.players.get(pid);
       if (ex.status === 'offline') ex.status = 'ready';
@@ -326,22 +402,52 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const nameTaken = [...room.state.players.values()]
-      .some(p => p.name.toLowerCase() === trimName.toLowerCase());
-    if (nameTaken) return socket.emit('room:error', `الاسم "${trimName}" مستخدم. اختر اسماً آخر.`);
+    // Returning queued player
+    if (pid && room.queue.has(pid)) {
+      const ex = room.queue.get(pid);
+      socket.join(code);
+      socket.data.roomCode = code; socket.data.persistentId = pid; socket.data.isAdmin = false;
+      socket.emit('player:self', playerView(ex));
+      socket.emit('player:queued', { queueCount: room.queue.size });
+      unicastState(socket, code);
+      return;
+    }
+
+    // Name uniqueness across both active and queue
+    const activeName  = [...room.state.players.values()].some(p => p.name.toLowerCase() === trimName.toLowerCase());
+    const queuedName  = [...room.queue.values()].some(p => p.name.toLowerCase() === trimName.toLowerCase());
+    if (activeName || queuedName)
+      return socket.emit('room:error', `الاسم "${trimName}" مستخدم. اختر اسماً آخر.`);
 
     const newPid = pid || makeId();
-    const player = { id: newPid, name: trimName, score: 0, status: 'ready', hasPressed: false };
-    room.state.players.set(newPid, player);
+    const player = { id: newPid, name: trimName, score: 0, status: 'queued', hasPressed: false };
+
     socket.join(code);
-    socket.data.roomCode = code; socket.data.persistentId = newPid; socket.data.isAdmin = false;
+    socket.data.roomCode     = code;
+    socket.data.persistentId = newPid;
+    socket.data.isAdmin      = false;
+
+    // ── ROUTING DECISION ──────────────────────────────────────
+    // Pre-game lobby: add to queue, admin will admit all at start
+    // Mid-game: add to queue, admin can admit between rounds
+    room.queue.set(newPid, player);
     socket.emit('player:self', playerView(player));
-    room.state.lastEvent = `${trimName} انضم.`;
-    broadcastFull(code);
-    console.log(`[player joined] ${trimName} → room ${code}`);
+    socket.emit('player:queued', { queueCount: room.queue.size });
+
+    // Persist id for reconnects
+    localStorage: {
+      // server-side note only — client stores it via player:self handler
+    }
+
+    // Notify admin about new queue entry via delta (no player list rebuild needed)
+    broadcastDelta(code);
+    console.log(`[player queued] ${trimName} → room ${code} (queue=${room.queue.size})`);
+
+    // If still in lobby, also broadcast full so lobby player list updates
+    if (room.inLobby) broadcastFull(code);
   });
 
-  // 7. Player buzz (atomic lock + fairness queue)
+  // 8. Player buzz (V7 logic — queue players cannot buzz)
   socket.on('player:buzz', ({ roomCode: rc, sentAt }) => {
     const code = rc || socket.data.roomCode;
     const pid  = socket.data.persistentId;
@@ -350,8 +456,11 @@ io.on('connection', (socket) => {
     const { state } = room;
     if (room.inLobby || state.gameLocked || state.roundLocked) return;
     if (state.blockedIds.includes(pid)) return;
+    // Queued players cannot buzz
+    if (room.queue.has(pid)) return;
     const player = state.players.get(pid);
     if (!player || player.hasPressed) return;
+
     player.hasPressed = true;
     const serverNow = Date.now();
     if (state._firstPressAt === null) {
@@ -365,7 +474,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 8. Admin give point → auto-reset
+  // 9. Admin give point → auto-reset
   socket.on('admin:give-point', ({ roomCode: rc }) => {
     const code = rc || socket.data.roomCode;
     const room = rooms.get(code);
@@ -379,7 +488,7 @@ io.on('connection', (socket) => {
     startCountdown(code);
   });
 
-  // 9. Admin manual reset
+  // 10. Admin manual reset
   socket.on('admin:reset-round', ({ roomCode: rc }) => {
     const code = rc || socket.data.roomCode;
     const room = rooms.get(code);
@@ -389,7 +498,7 @@ io.on('connection', (socket) => {
     startCountdown(code);
   });
 
-  // 10. Admin new game
+  // 11. Admin new game
   socket.on('admin:new-game', ({ roomCode: rc }) => {
     const code = rc || socket.data.roomCode;
     const room = rooms.get(code);
@@ -402,7 +511,7 @@ io.on('connection', (socket) => {
     startCountdown(code);
   });
 
-  // 11. Admin end game
+  // 12. Admin end game
   socket.on('admin:end-game', ({ roomCode: rc }) => {
     const code = rc || socket.data.roomCode;
     const room = rooms.get(code);
@@ -414,7 +523,7 @@ io.on('connection', (socket) => {
     broadcastFull(code);
   });
 
-  // 12. Admin unlock buzzer (wrong answer)
+  // 13. Admin unlock buzzer (wrong answer)
   socket.on('admin:unlock-buzzer', ({ roomCode: rc }) => {
     const code = rc || socket.data.roomCode;
     const room = rooms.get(code);
@@ -435,7 +544,7 @@ io.on('connection', (socket) => {
     io.to(code).volatile.emit('round:active-flash');
   });
 
-  // 13. Disconnect — keep player record, mark offline
+  // 14. Disconnect
   socket.on('disconnect', () => {
     const { roomCode: code, persistentId: pid, isAdmin } = socket.data;
     const room = rooms.get(code);
@@ -444,12 +553,18 @@ io.on('connection', (socket) => {
       room.state.lastEvent = 'المدير قطع الاتصال مؤقتاً.';
       broadcastDelta(code);
     } else if (pid) {
+      // Check active first, then queue
       const p = room.state.players.get(pid);
-      if (p) { p.status = 'offline'; room.state.lastEvent = `${p.name} خرج مؤقتاً.`; broadcastFull(code); }
+      if (p) {
+        p.status = 'offline';
+        room.state.lastEvent = `${p.name} خرج مؤقتاً.`;
+        broadcastFull(code);
+      }
+      // Queued players silently remain in queue (they can reconnect)
     }
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`\nBuzzer v8 (fixed)  →  http://localhost:${PORT}\n`);
+  console.log(`\nBuzzer v9  →  http://localhost:${PORT}\n`);
 });

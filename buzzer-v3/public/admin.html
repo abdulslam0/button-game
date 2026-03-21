@@ -2,65 +2,16 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>من يضغط الزر أولاً — مدير</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>لوحة المدير — من يضغط الزر أولاً</title>
 <link rel="stylesheet" href="/shared.css"/>
 <style>
-/* ── Brand customisation panel ── */
-.brand-panel{
-  background:var(--surface);border-radius:1rem;
-  border:1.5px solid var(--border);padding:1rem;
-  margin-top:1rem;display:grid;
-  grid-template-columns:1fr 1fr;gap:.75rem;align-items:end;
-}
-.brand-panel label{font-size:.85rem;font-weight:700;color:var(--text2);display:block;margin-bottom:.25rem}
-.color-preview{
-  width:36px;height:36px;border-radius:50%;
-  border:2px solid var(--border);flex-shrink:0;
-}
-.color-row{display:flex;align-items:center;gap:.5rem}
-input[type=color]{
-  width:44px;height:44px;border:none;
-  border-radius:.5rem;cursor:pointer;padding:2px;
-  background:var(--input-bg);
-}
-.logo-upload-label{
-  display:block;text-align:center;
-  background:var(--bg);border:1.5px dashed var(--border);
-  border-radius:.75rem;padding:.6rem;font-size:.85rem;
-  font-weight:700;color:var(--text2);cursor:pointer;
-}
-.logo-upload-label:hover{border-color:var(--brand);color:var(--brand)}
-#logo-preview{
-  width:60px;height:60px;border-radius:50%;
-  object-fit:cover;display:none;margin:.5rem auto 0;
-  border:2px solid var(--border);
-}
-
-/* ── Winner overlay ── */
-#winner-overlay{
-  display:none;position:fixed;inset:0;z-index:7000;
-  flex-direction:column;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
-}
-#winner-overlay.show{display:flex;animation:fadeIn .3s ease}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.winner-card{
-  background:var(--surface2,#fff);border-radius:1.5rem;
-  padding:2rem 2.5rem;text-align:center;
-  box-shadow:0 20px 60px rgba(0,0,0,.4);max-width:340px;width:90%;
-}
-.winner-emoji{font-size:4rem;line-height:1;margin-bottom:.5rem}
-.winner-name{font-size:1.8rem;font-weight:900;color:var(--brand);margin:.4rem 0}
-.winner-sub{font-size:1rem;color:var(--text2);font-weight:700}
+/* Winner overlay close hint */
+#winner-overlay p.hint{ font-size:.72rem; color:var(--text3); margin-top:1rem; }
 </style>
 </head>
 <body>
 
-<!-- Dark mode toggle -->
-<button id="dark-toggle" onclick="toggleDark()" title="الوضع الليلي">🌙</button>
-
-<!-- Reconnect button -->
 <button id="btn-reconnect" class="rc-btn" onclick="manualReconnect()">⚡ إعادة اتصال</button>
 
 <!-- Winner overlay -->
@@ -70,49 +21,45 @@ input[type=color]{
     <div class="winner-name" id="ov-winner-name"></div>
     <div class="winner-sub">ضغط الزر أولاً!</div>
     <div id="ov-podium" class="podium" style="margin-top:1rem"></div>
-    <p style="font-size:.75rem;color:var(--text2);margin-top:1rem">اضغط في أي مكان للإغلاق</p>
+    <p class="hint">اضغط للإغلاق</p>
   </div>
 </div>
 
-<!-- ══ SETUP FORM ══════════════════════════════════════════════ -->
+<!-- ══ SETUP FORM ══ -->
 <div id="view-setup" style="display:flex;flex-direction:column;align-items:center;width:100%">
   <header>
     <div class="logo-circle"><div class="logo-inner"></div></div>
     <h1>من يضغط الزر أولاً</h1>
   </header>
   <div class="card">
-    <h2 style="font-size:1.15rem;font-weight:900;color:var(--brand);margin-bottom:1rem">إنشاء غرفة / استعادة الجلسة</h2>
-
-    <label style="font-size:.95rem;font-weight:700;display:block;margin-bottom:.1rem">اسم اللعبة</label>
+    <h2 style="font-size:1.1rem;font-weight:900;color:var(--brand);margin-bottom:1rem">إنشاء غرفة جديدة</h2>
+    <label style="font-size:.88rem;font-weight:700;display:block;margin-bottom:.1rem">اسم اللعبة</label>
     <input type="text" id="game-name" placeholder="مثال: مسابقة الجمعة" maxlength="40"/>
-
-    <label style="font-size:.95rem;font-weight:700;display:block;margin-top:.75rem;margin-bottom:.1rem">رمز الغرفة (4 أرقام)</label>
-    <input type="number" id="room-code" placeholder="مثال: 1234" min="0" max="9999"
-           oninput="this.value=this.value.slice(0,4)" style="letter-spacing:.25em;font-weight:900"/>
-
-    <!-- Brand customisation -->
+    <label style="font-size:.88rem;font-weight:700;display:block;margin-top:.75rem;margin-bottom:.1rem">رمز الغرفة (4 أرقام)</label>
+    <input type="number" id="room-code" placeholder="----" min="0" max="9999"
+           oninput="this.value=this.value.slice(0,4)"
+           style="letter-spacing:.35em;font-weight:900;text-align:center"/>
+    <!-- Brand customisation on setup -->
     <div class="brand-panel">
       <div>
         <label>🎨 لون الزر</label>
         <div class="color-row">
-          <input type="color" id="setup-color" value="#b60012" onchange="previewColor(this.value)"/>
-          <div class="color-preview" id="color-preview" style="background:#b60012"></div>
+          <input type="color" id="setup-color" value="#c0392b" onchange="previewColor(this.value)"/>
+          <div class="color-preview" id="color-preview" style="background:#c0392b"></div>
         </div>
       </div>
       <div>
-        <label>🖼 شعار مخصص</label>
+        <label>🖼 شعار</label>
         <label class="logo-upload-label" for="logo-file">رفع صورة</label>
         <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="handleLogo(this)"/>
-        <img id="logo-preview" alt="logo preview"/>
       </div>
     </div>
-
     <div class="form-error" id="setup-error"></div>
-    <button class="btn btn-red" style="margin-top:.75rem" onclick="createRoom()">إنشاء الغرفة وبدء اللعبة</button>
+    <button class="btn btn-red" style="margin-top:.75rem" onclick="createRoom()">إنشاء الغرفة</button>
   </div>
 </div>
 
-<!-- ══ ADMIN DASHBOARD ═════════════════════════════════════════ -->
+<!-- ══ ADMIN DASHBOARD ══ -->
 <div id="view-admin" style="display:none;flex-direction:column;align-items:center;width:100%">
   <header>
     <div class="logo-circle" id="admin-logo"><div class="logo-inner"></div></div>
@@ -121,43 +68,60 @@ input[type=color]{
   </header>
 
   <div class="admin-grid">
-    <!-- Left: players + controls -->
+    <!-- Left: controls -->
     <div class="card" style="max-width:none">
-      <h2 style="font-size:1.1rem;font-weight:900;color:var(--brand);margin-bottom:.75rem">اللاعبون المباشرون</h2>
+
+      <!-- Lobby phase banner (shown while inLobby=true) -->
+      <div id="lobby-banner" style="display:none;background:var(--brand-dim);border:1px solid var(--brand-border);border-radius:.75rem;padding:.75rem 1rem;margin-bottom:.75rem">
+        <div style="font-weight:900;color:var(--brand);font-size:.95rem;margin-bottom:.35rem">🎮 صالة الانتظار نشطة</div>
+        <div style="font-size:.85rem;color:var(--text2);margin-bottom:.6rem">اللاعبون يجتمعون. اضغط عندما تكون جاهزاً لبدء اللعبة.</div>
+        <button class="btn btn-green" id="btn-start-game" onclick="emit('admin:start-game')"
+                style="width:auto;padding:.5rem 1.25rem;font-size:.9rem">▶ بدء اللعبة الآن</button>
+      </div>
+
+      <!-- Queue notification badge (shown when queueCount > 0) -->
+      <div id="queue-badge" class="queue-badge">
+        <div class="queue-dot"></div>
+        <div class="queue-text" id="queue-badge-text">لاعبون في الانتظار</div>
+        <button class="queue-admit-btn" onclick="emit('admin:admit-all')">قبول الكل</button>
+      </div>
+
+      <h2 style="font-size:1.05rem;font-weight:900;color:var(--brand);margin-bottom:.75rem;margin-top:.5rem">اللاعبون المباشرون</h2>
       <table>
         <thead><tr><th>الاسم</th><th>النقاط</th><th>الحالة</th></tr></thead>
         <tbody id="a-players-tbody">
-          <tr><td colspan="3" style="color:var(--text2);text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>
+          <tr><td colspan="3" style="color:var(--text3);text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>
         </tbody>
       </table>
+
       <div id="event-feed">في انتظار اللاعبين...</div>
-      <div style="font-size:.9rem;font-weight:700;margin:.4rem 0;color:var(--text2)">
+      <div style="font-size:.85rem;font-weight:700;margin:.4rem 0;color:var(--text2)">
         الجولة: <span id="a-round">1</span> &nbsp;|&nbsp; العد: <span id="a-countdown">-</span>
       </div>
+
       <div class="admin-btns">
         <button class="btn btn-red"   id="btn-give-point"  onclick="emit('admin:give-point')"    disabled>1️⃣ إعطاء نقطة</button>
-        <button class="btn btn-gold"  id="btn-reset-round" onclick="emit('admin:reset-round')"           >2️⃣ إعادة تعيين الجولة</button>
-        <button class="btn btn-dark"  id="btn-new-game"    onclick="emit('admin:new-game')"              >3️⃣ لعبة جديدة</button>
+        <button class="btn btn-dark"  id="btn-reset-round" onclick="emit('admin:reset-round')"           >2️⃣ إعادة تعيين الجولة</button>
+        <button class="btn btn-outline" id="btn-new-game"  onclick="emit('admin:new-game')"              >3️⃣ لعبة جديدة</button>
         <button class="btn btn-black" id="btn-end-game"    onclick="emit('admin:end-game')"              >4️⃣ إنهاء اللعبة</button>
-        <button class="btn btn-green" id="btn-unlock"      onclick="emit('admin:unlock-buzzer')" disabled
+        <button class="btn btn-gold"  id="btn-unlock"      onclick="emit('admin:unlock-buzzer')" disabled
                 style="grid-column:span 2">🔓 فتح الزر للبقية (إجابة خاطئة)</button>
       </div>
 
-      <!-- Live brand controls inside dashboard -->
+      <!-- Live brand controls -->
       <details style="margin-top:1rem">
-        <summary style="font-size:.9rem;font-weight:700;cursor:pointer;color:var(--text2)">🎨 تخصيص الشعار والألوان</summary>
+        <summary style="font-size:.85rem;font-weight:700;cursor:pointer;color:var(--text2);user-select:none">🎨 تخصيص الشعار والألوان</summary>
         <div class="brand-panel" style="margin-top:.5rem">
           <div>
             <label>لون الزر</label>
             <div class="color-row">
-              <input type="color" id="live-color" value="#b60012" onchange="sendBrand()"/>
+              <input type="color" id="live-color" value="#c0392b" onchange="sendBrand()"/>
             </div>
           </div>
           <div>
-            <label>شعار مخصص</label>
+            <label>شعار</label>
             <label class="logo-upload-label" for="live-logo-file">رفع صورة</label>
-            <input type="file" id="live-logo-file" accept="image/*" style="display:none"
-                   onchange="handleLiveLogo(this)"/>
+            <input type="file" id="live-logo-file" accept="image/*" style="display:none" onchange="handleLiveLogo(this)"/>
           </div>
         </div>
       </details>
@@ -166,8 +130,8 @@ input[type=color]{
     <!-- Right: podium + leaderboard -->
     <div class="card" style="max-width:none">
       <div id="a-podium" class="podium" style="display:none;margin-bottom:1rem"></div>
-      <h3 style="font-size:1.1rem;font-weight:900;color:var(--brand);margin-bottom:.75rem">Leaderboard</h3>
-      <div id="a-leaderboard"><p style="color:var(--text2);text-align:center">لا يوجد لاعبون بعد</p></div>
+      <h3 style="font-size:1.05rem;font-weight:900;color:var(--brand);margin-bottom:.75rem">Leaderboard</h3>
+      <div id="a-leaderboard"><p style="color:var(--text3);text-align:center">لا يوجد لاعبون بعد</p></div>
     </div>
   </div>
 </div>
@@ -176,43 +140,21 @@ input[type=color]{
 <script src="/socket.io/socket.io.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
-// admin.html — v8
+// admin.html — v9
 // ════════════════════════════════════════════════════════════
 
 var LS_ADMIN_ROOM = 'buzzer_admin_room';
-var LS_DARK       = 'buzzer_dark';
 
 var socket   = io({ reconnectionDelay:1000, reconnectionDelayMax:5000 });
 var roomCode = null;
 var MEDALS   = ['🥇','🥈','🥉'];
-var _pendingLogoUrl = '';   // logo chosen before room created
-
-// ── Dark mode ─────────────────────────────────────────────────
-(function(){
-  var pref=localStorage.getItem(LS_DARK);
-  if(pref==='dark') document.body.classList.add('dark');
-  if(pref==='light') document.body.classList.add('light');
-  document.getElementById('dark-toggle').textContent=
-    (pref==='dark'||(pref!=='light'&&window.matchMedia('(prefers-color-scheme:dark)').matches))?'☀️':'🌙';
-})();
-function toggleDark(){
-  var b=document.body;
-  if(b.classList.contains('dark')){
-    b.classList.remove('dark');b.classList.add('light');
-    localStorage.setItem(LS_DARK,'light');
-    document.getElementById('dark-toggle').textContent='🌙';
-  } else {
-    b.classList.remove('light');b.classList.add('dark');
-    localStorage.setItem(LS_DARK,'dark');
-    document.getElementById('dark-toggle').textContent='☀️';
-  }
-}
+var _pendingLogoUrl = '';
 
 // ── Heartbeat ─────────────────────────────────────────────────
-var lastHeartbeat=Date.now();
-function bumpHeartbeat(){lastHeartbeat=Date.now();}
+var _hbLast=Date.now();
+function bumpHB(){ _hbLast=Date.now(); }
 setInterval(function(){
-  if(Date.now()-lastHeartbeat>15000){console.log('[hb] admin stale');forceResync();}
+  if(Date.now()-_hbLast>15000) forceResync();
 },5000);
 
 function emitResync(){
@@ -220,8 +162,7 @@ function emitResync(){
   if(room) socket.emit('admin:rejoin',{roomCode:room});
 }
 function forceResync(){
-  if(!socket.connected) socket.connect();
-  else emitResync();
+  if(!socket.connected) socket.connect(); else emitResync();
 }
 
 // ── Reconnect button ──────────────────────────────────────────
@@ -235,7 +176,7 @@ document.addEventListener('visibilitychange',function(){
   }
 });
 
-// ── Sounds ────────────────────────────────────────────────────
+// ── Audio ─────────────────────────────────────────────────────
 var AC=typeof AudioContext!=='undefined'?new AudioContext():null;
 function tone(f,d,t,v){
   t=t||'sine';v=v||0.35;
@@ -247,28 +188,23 @@ function tone(f,d,t,v){
   o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);
 }
 function soundWinner(){
-  var notes=[523,659,784,1047];
-  notes.forEach(function(f,i){ setTimeout(function(){tone(f,0.4,'sine',0.4);},i*110); });
+  [523,659,784,1047].forEach(function(f,i){ setTimeout(function(){tone(f,0.4,'sine',0.4);},i*110); });
 }
-function soundReset(){ tone(440,0.18); setTimeout(function(){tone(550,0.14);},90); }
+function soundReset(){ tone(440,0.18);setTimeout(function(){tone(550,0.14);},90); }
 
 // ── Confetti ──────────────────────────────────────────────────
 function fireConfetti(){
   if(typeof confetti==='undefined')return;
-  confetti({particleCount:150,spread:90,origin:{y:0.5},
-    colors:['#b60012','#9e8a5f','#ffffff','#ffd700']});
-  setTimeout(function(){
-    confetti({particleCount:80,spread:130,origin:{y:0.6},
-      colors:['#ffd700','#ff6060','#b60012']});
-  },300);
+  confetti({particleCount:150,spread:90,origin:{y:0.5},colors:['#c0392b','#a07840','#ffffff','#ffd700']});
+  setTimeout(function(){ confetti({particleCount:80,spread:130,origin:{y:0.6},colors:['#ffd700','#c0392b']}); },300);
 }
 
-// ── Brand helpers ─────────────────────────────────────────────
+// ── Brand ─────────────────────────────────────────────────────
 function applyBrand(brand){
   if(!brand)return;
   if(brand.color){
     document.documentElement.style.setProperty('--brand',brand.color);
-    document.documentElement.style.setProperty('--buzzer-col',brand.color);
+    document.documentElement.style.setProperty('--bz-mid',brand.color);
     document.getElementById('live-color').value=brand.color;
   }
   if(brand.logoUrl){
@@ -276,77 +212,65 @@ function applyBrand(brand){
     if(el) el.innerHTML='<img src="'+brand.logoUrl+'" alt="logo"/>';
   }
 }
-
-function previewColor(val){
-  document.getElementById('color-preview').style.background=val;
-}
-
+function previewColor(v){ document.getElementById('color-preview').style.background=v; }
 function handleLogo(input){
-  var file=input.files[0];
-  if(!file)return;
-  var reader=new FileReader();
-  reader.onload=function(e){
-    _pendingLogoUrl=e.target.result;
-    var prev=document.getElementById('logo-preview');
-    prev.src=e.target.result; prev.style.display='block';
-  };
-  reader.readAsDataURL(file);
+  var f=input.files[0]; if(!f)return;
+  var r=new FileReader();
+  r.onload=function(e){ _pendingLogoUrl=e.target.result; };
+  r.readAsDataURL(f);
 }
-
 function handleLiveLogo(input){
-  var file=input.files[0];
-  if(!file)return;
-  var reader=new FileReader();
-  reader.onload=function(e){
-    socket.emit('admin:set-brand',{roomCode:roomCode,logoUrl:e.target.result});
-  };
-  reader.readAsDataURL(file);
+  var f=input.files[0]; if(!f)return;
+  var r=new FileReader();
+  r.onload=function(e){ socket.emit('admin:set-brand',{roomCode:roomCode,logoUrl:e.target.result}); };
+  r.readAsDataURL(f);
+}
+function sendBrand(){
+  socket.emit('admin:set-brand',{roomCode:roomCode,color:document.getElementById('live-color').value});
 }
 
-function sendBrand(){
-  var color=document.getElementById('live-color').value;
-  socket.emit('admin:set-brand',{roomCode:roomCode,color:color});
+// ── Status helpers ────────────────────────────────────────────
+function statusLabel(s){ return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',offline:'🔴 غائب',wrong:'❌ خطأ',queued:'⏳ انتظار'}[s]||s; }
+function statusClass(s){ return {winner:'status-winner',ready:'status-ready','too-late':'status-too-late',offline:'status-offline',wrong:'status-wrong',queued:'status-queued'}[s]||''; }
+
+// ── Podium ────────────────────────────────────────────────────
+function renderPodium(players,elId){
+  var el=document.getElementById(elId); if(!el)return;
+  var top=players.slice().sort(function(a,b){return b.score-a.score;}).slice(0,3);
+  if(!top.length||top[0].score===0){el.style.display='none';return;}
+  var order=[top[1],top[0],top[2]], classes=['p2','p1','p3'];
+  el.style.display='flex';
+  el.innerHTML=order.map(function(p,i){
+    if(!p)return '<div class="podium-slot '+classes[i]+'"></div>';
+    var rank=top.indexOf(p);
+    return '<div class="podium-slot '+classes[i]+'"><div class="podium-medal">'+MEDALS[rank]+'</div>'
+      +'<div class="podium-name">'+p.name+'</div><div class="podium-score">'+p.score+'</div></div>';
+  }).join('');
 }
 
 // ── Emit helper ───────────────────────────────────────────────
 function emit(ev){ socket.emit(ev,{roomCode:roomCode}); }
 
-// ── Status helpers ────────────────────────────────────────────
-function statusLabel(s){
-  return {winner:'🏆 فائز',ready:'✅ جاهز','too-late':'⛔ تأخر',offline:'🔴 غائب',wrong:'❌ خطأ'}[s]||s;
-}
-function statusClass(s){
-  return {winner:'status-winner',ready:'status-ready','too-late':'status-too-late',offline:'status-offline',wrong:'status-wrong'}[s]||'';
-}
-
-// ── Podium ────────────────────────────────────────────────────
-function renderPodium(players,elId){
-  var el=document.getElementById(elId);
-  if(!el)return;
-  var top=players.slice().sort(function(a,b){return b.score-a.score;}).slice(0,3);
-  if(!top.length||top[0].score===0){el.style.display='none';return;}
-  var order=[top[1],top[0],top[2]];
-  var classes=['p2','p1','p3'];
-  el.style.display='flex';
-  el.innerHTML=order.map(function(p,i){
-    if(!p)return '<div class="podium-slot '+classes[i]+'"></div>';
-    var rank=top.indexOf(p);
-    return '<div class="podium-slot '+classes[i]+'">'
-      +'<div class="podium-medal">'+MEDALS[rank]+'</div>'
-      +'<div class="podium-name">'+p.name+'</div>'
-      +'<div class="podium-score">'+p.score+'</div>'
-      +'</div>';
-  }).join('');
-}
-
 // ── Show dashboard ────────────────────────────────────────────
-function showDashboard(code, name){
+function showDashboard(code,name){
   roomCode=code;
   localStorage.setItem(LS_ADMIN_ROOM,code);
   document.getElementById('a-room-code').textContent=code;
   document.getElementById('a-game-name').textContent=name;
   document.getElementById('view-setup').style.display='none';
   document.getElementById('view-admin').style.display='flex';
+}
+
+// ── Queue badge ───────────────────────────────────────────────
+function updateQueueBadge(count){
+  var badge=document.getElementById('queue-badge');
+  var text=document.getElementById('queue-badge-text');
+  if(count>0){
+    badge.classList.add('show');
+    text.textContent=count+' لاعب'+(count===1?'':'ين')+' في الانتظار';
+  } else {
+    badge.classList.remove('show');
+  }
 }
 
 // ── On load ───────────────────────────────────────────────────
@@ -357,7 +281,7 @@ window.addEventListener('load',function(){
 
 // ── Socket lifecycle ──────────────────────────────────────────
 socket.on('connect',function(){
-  bumpHeartbeat(); setRC(false);
+  bumpHB(); setRC(false);
   var room=roomCode||localStorage.getItem(LS_ADMIN_ROOM);
   if(room) socket.emit('admin:rejoin',{roomCode:room});
 });
@@ -366,21 +290,16 @@ socket.on('connect_error',function(){ setRC(true); });
 
 // ── Game events ───────────────────────────────────────────────
 socket.on('room:created',function(d){
-  bumpHeartbeat();
+  bumpHB();
   showDashboard(d.roomCode,d.gameName);
-  // If admin set brand before room was created, push it now
   var color=document.getElementById('setup-color').value;
-  if(color!=='#b60012'||_pendingLogoUrl){
-    socket.emit('admin:set-brand',{
-      roomCode:d.roomCode,
-      color:color,
-      logoUrl:_pendingLogoUrl||undefined
-    });
+  if(color!=='#c0392b'||_pendingLogoUrl){
+    socket.emit('admin:set-brand',{roomCode:d.roomCode,color:color,logoUrl:_pendingLogoUrl||undefined});
   }
 });
 
 socket.on('room:error',function(msg){
-  bumpHeartbeat();
+  bumpHB();
   if(!roomCode){
     localStorage.removeItem(LS_ADMIN_ROOM);
     document.getElementById('view-setup').style.display='flex';
@@ -390,31 +309,27 @@ socket.on('room:error',function(msg){
 });
 
 socket.on('game:state',function(state){
-  bumpHeartbeat();
+  bumpHB();
   window._lastFullState=state;
   if(state.brand) applyBrand(state.brand);
   render(state);
 });
 
 socket.on('round:winner',function(d){
-  bumpHeartbeat();
+  bumpHB();
   soundWinner();
   fireConfetti();
   document.getElementById('ov-winner-name').textContent=d.winnerName;
   if(window._lastFullState) renderPodium(window._lastFullState.players,'ov-podium');
-  document.getElementById('winner-overlay').classList.add('show');
-  setTimeout(function(){
-    document.getElementById('winner-overlay').classList.remove('show');
-  },4000);
+  var ov=document.getElementById('winner-overlay');
+  ov.classList.add('show');
+  setTimeout(function(){ ov.classList.remove('show'); },4000);
 });
 
-socket.on('round:active-flash',function(){
-  bumpHeartbeat();
-  soundReset();
-});
+socket.on('round:active-flash',function(){ bumpHB(); soundReset(); });
 
 socket.on('game:delta',function(delta){
-  bumpHeartbeat();
+  bumpHB();
   if(!window._lastFullState)return;
   Object.assign(window._lastFullState,delta);
   if(delta.brand) applyBrand(delta.brand);
@@ -422,9 +337,10 @@ socket.on('game:delta',function(delta){
 });
 
 socket.on('game:tick',function(tick){
-  bumpHeartbeat();
+  bumpHB();
   document.getElementById('a-round').textContent=tick.round;
   document.getElementById('a-countdown').textContent=tick.countdown;
+  if(tick.queueCount!==undefined) updateQueueBadge(tick.queueCount);
   if(window._lastFullState){
     window._lastFullState.round=tick.round;
     window._lastFullState.countdown=tick.countdown;
@@ -438,13 +354,21 @@ function render(state){
   document.getElementById('a-countdown').textContent=state.countdown!=null?state.countdown:'-';
   document.getElementById('event-feed').textContent=state.lastEvent;
 
+  // Lobby banner
+  var banner=document.getElementById('lobby-banner');
+  if(banner) banner.style.display=state.inLobby?'block':'none';
+
+  // Queue badge
+  updateQueueBadge(state.queueCount||0);
+
   var hasWinner=!!state.winnerId;
   document.getElementById('btn-give-point').disabled=!hasWinner;
   document.getElementById('btn-unlock').disabled=!hasWinner;
 
+  // Players table
   var tb=document.getElementById('a-players-tbody');
   if(state.players.length===0){
-    tb.innerHTML='<tr><td colspan="3" style="color:var(--text2);text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>';
+    tb.innerHTML='<tr><td colspan="3" style="color:var(--text3);text-align:center;padding:1rem">لا يوجد لاعبون بعد</td></tr>';
   } else {
     tb.innerHTML=state.players.map(function(p){
       var blocked=(state.blockedIds||[]).indexOf(p.id)>-1;
@@ -456,14 +380,13 @@ function render(state){
     }).join('');
   }
 
-  var sorted=[].concat(state.players).sort(function(a,b){
-    return b.score-a.score||a.name.localeCompare(b.name);
-  });
+  // Leaderboard
+  var sorted=[].concat(state.players).sort(function(a,b){ return b.score-a.score||a.name.localeCompare(b.name); });
   document.getElementById('a-leaderboard').innerHTML=sorted.length
     ? sorted.map(function(p,i){
         return '<div class="lb-item"><span>'+(MEDALS[i]||'•')+' '+p.name+'</span><span>'+p.score+'</span></div>';
       }).join('')
-    : '<p style="color:var(--text2);text-align:center">لا يوجد لاعبون بعد</p>';
+    : '<p style="color:var(--text3);text-align:center">لا يوجد لاعبون بعد</p>';
 
   renderPodium(state.players,'a-podium');
 }
@@ -474,8 +397,8 @@ function createRoom(){
   var code=document.getElementById('room-code').value.trim();
   var err=document.getElementById('setup-error');
   err.textContent='';
-  if(!name){err.textContent='أدخل اسم اللعبة.';return;}
-  if(!/^\d{4}$/.test(code)){err.textContent='الرمز يجب أن يكون 4 أرقام بالضبط.';return;}
+  if(!name){ err.textContent='أدخل اسم اللعبة.'; return; }
+  if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام بالضبط.'; return; }
   socket.emit('admin:create-room',{gameName:name,roomCode:code});
 }
 </script>
