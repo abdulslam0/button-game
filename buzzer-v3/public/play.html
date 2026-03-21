@@ -363,6 +363,44 @@ function renderTable(state){
       +'</tr>';
   }).join('');
 }
+
+// ── game:delta — slim control-state update (no player list) ──
+// Server sends this for events that don't change player scores/list.
+// We merge it into lastState so subsequent renders stay correct.
+socket.on('game:delta', function(delta){
+  bumpHeartbeat();
+  if(!lastState) return;
+  // Merge delta fields into cached state
+  Object.assign(lastState, delta);
+  // Update countdown / round display
+  document.getElementById('p-round').textContent=lastState.round;
+  document.getElementById('p-countdown').textContent=
+    (lastState.roundLocked && !lastState.winnerId) ? lastState.countdown : '-';
+  var cb=document.getElementById('countdown-badge');
+  if(cb) cb.textContent=
+    (!lastState.winnerId&&lastState.roundLocked&&!lastState.gameLocked&&lastState.countdown>0)
+      ? lastState.countdown : '';
+  if(!myId) return;
+  var me=lastState.players.find(function(p){ return p.id===myId; });
+  if(me){ setBuzzer(lastState, me); }
+});
+
+// ── game:tick — volatile countdown tick (may arrive out of order) ──
+// Only updates the countdown numbers; never re-renders player list.
+socket.on('game:tick', function(tick){
+  bumpHeartbeat();
+  // Merge tick into lastState
+  if(lastState){
+    lastState.round      = tick.round;
+    lastState.countdown  = tick.countdown;
+    lastState.roundLocked= tick.locked;
+  }
+  document.getElementById('p-round').textContent=tick.round;
+  document.getElementById('p-countdown').textContent=
+    (tick.locked) ? tick.countdown : '-';
+  var cb=document.getElementById('countdown-badge');
+  if(cb) cb.textContent=(tick.locked && tick.countdown>0) ? tick.countdown : '';
+});
 </script>
 </body>
 </html>

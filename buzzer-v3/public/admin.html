@@ -223,6 +223,7 @@ socket.on('room:error', function(msg){
 
 socket.on('game:state', function(state){
   bumpHeartbeat();
+  window._lastFullState = state;   // cache for game:delta merging
   render(state);
 });
 
@@ -275,6 +276,28 @@ function createRoom(){
   if(!/^\d{4}$/.test(code)){ err.textContent='الرمز يجب أن يكون 4 أرقام بالضبط.'; return; }
   socket.emit('admin:create-room',{ gameName:name, roomCode:code });
 }
+
+// ── game:delta — slim control-state update ────────────────────
+socket.on('game:delta', function(delta){
+  bumpHeartbeat();
+  // Build a minimal render-compatible object from the delta
+  // and the last known player list (admin always has full state)
+  if(!window._lastFullState) return;
+  Object.assign(window._lastFullState, delta);
+  render(window._lastFullState);
+});
+
+// ── game:tick — volatile countdown tick ───────────────────────
+socket.on('game:tick', function(tick){
+  bumpHeartbeat();
+  document.getElementById('a-round').textContent     = tick.round;
+  document.getElementById('a-countdown').textContent = tick.countdown;
+  if(window._lastFullState){
+    window._lastFullState.round      = tick.round;
+    window._lastFullState.countdown  = tick.countdown;
+    window._lastFullState.roundLocked= tick.locked;
+  }
+});
 </script>
 </body>
 </html>
